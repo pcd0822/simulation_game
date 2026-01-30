@@ -20,6 +20,12 @@ import {
 import '@xyflow/react/dist/style.css'
 import type { StoryNode, ImageAsset, VariableDef } from '../types/game'
 
+function isStoryNode(obj: unknown): obj is StoryNode {
+  if (!obj || typeof obj !== 'object') return false
+  const o = obj as Record<string, unknown>
+  return typeof o.id === 'string' && typeof o.type === 'string' && typeof o.text === 'string'
+}
+
 interface StoryEditorProps {
   nodes: StoryNode[]
   imageAssets: ImageAsset[]
@@ -71,7 +77,7 @@ function storyToFlowEdges(nodes: StoryNode[], startNodeId: string): Edge[] {
 }
 
 function StoryNodeComponent({ data, selected }: NodeProps) {
-  const node = data as StoryNode
+  const node = isStoryNode(data) ? data : { id: '', type: 'dialogue' as const, text: '' }
   const preview = node.text?.slice(0, 30) ?? node.id
   return (
     <div
