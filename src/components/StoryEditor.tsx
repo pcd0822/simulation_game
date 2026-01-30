@@ -29,7 +29,7 @@ interface StoryEditorProps {
 }
 
 function storyToFlowNodes(nodes: StoryNode[], startNodeId: string): Node[] {
-  const byId = new Map(nodes.map((n, i) => [n.id, n]))
+  const byId = new Map(nodes.map((n) => [n.id, n]))
   const visited = new Set<string>()
   const queue = [startNodeId]
   while (queue.length) {
@@ -42,25 +42,17 @@ function storyToFlowNodes(nodes: StoryNode[], startNodeId: string): Node[] {
     if (n.choices) n.choices.forEach((c) => queue.push(c.next))
   }
   const list = Array.from(visited).map((id) => byId.get(id)!).filter(Boolean)
-  return list.map((n, i) => ({
+  return list.map((n, idx) => ({
     id: n.id,
     type: 'storyNode',
-    position: { x: (i % 4) * 220, y: Math.floor(i / 4) * 140 },
-    data: { ...n },
+    position: { x: (idx % 4) * 220, y: Math.floor(idx / 4) * 140 },
+    data: { ...n } as Record<string, unknown>,
   }))
 }
 
 function storyToFlowEdges(nodes: StoryNode[], startNodeId: string): Edge[] {
   const edges: Edge[] = []
   const byId = new Map(nodes.map((n) => [n.id, n]))
-  const walk = (id: string) => {
-    const n = byId.get(id)
-    if (!n) return
-    if (n.next) edges.push({ id: `e-${n.id}-${n.next}`, source: n.id, target: n.next })
-    if (n.choices) n.choices.forEach((c) => {
-      edges.push({ id: `e-${n.id}-${c.next}`, source: n.id, target: c.next })
-    })
-  }
   const visited = new Set<string>()
   const queue = [startNodeId]
   while (queue.length) {
@@ -78,7 +70,7 @@ function storyToFlowEdges(nodes: StoryNode[], startNodeId: string): Edge[] {
   return edges
 }
 
-function StoryNodeComponent({ data, selected }: NodeProps<StoryNode>) {
+function StoryNodeComponent({ data, selected }: NodeProps) {
   const node = data as StoryNode
   const preview = node.text?.slice(0, 30) ?? node.id
   return (
@@ -101,7 +93,7 @@ const nodeTypes: NodeTypes = { storyNode: StoryNodeComponent }
 export function StoryEditor({
   nodes,
   imageAssets,
-  variables,
+  variables: _variables,
   startNodeId,
   onNodesChange,
 }: StoryEditorProps) {
@@ -146,16 +138,19 @@ export function StoryEditor({
           nodes={flowNodes}
           edges={flowEdges}
           onNodesChange={(changes) => {
-            setFlowNodes((nds) => {
-              const next = nds.map((n) => {
-                const c = changes.find((ch) => ch.id === n.id)
-                if (c?.type === 'position' && c.dragging === false && c.position) {
-                  return { ...n, position: c.position }
+            setFlowNodes((nds) =>
+              nds.map((n) => {
+                for (const ch of changes) {
+                  if ('id' in ch && (ch as { id: string }).id === n.id && 'position' in ch) {
+                    const posCh = ch as { type: string; position: { x: number; y: number }; dragging?: boolean }
+                    if (posCh.type === 'position' && posCh.dragging === false && posCh.position) {
+                      return { ...n, position: posCh.position }
+                    }
+                  }
                 }
                 return n
               })
-              return next
-            })
+            )
           }}
           onEdgesChange={() => {}}
           onConnect={onConnect}
