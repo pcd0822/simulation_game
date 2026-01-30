@@ -3,7 +3,7 @@
  */
 
 import { useState, useCallback, useMemo } from 'react'
-import type { GameData, StoryNode, VariableDef } from '../types/game'
+import type { GameData, StoryNode } from '../types/game'
 
 interface GamePlayerProps {
   data: GameData
