@@ -13,23 +13,77 @@ const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_URL
  */
 export async function sendToGoogleScript(targetSheetUrl, action, data = {}) {
   try {
-    const response = await fetch(GOOGLE_SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        targetSheetUrl,
-        action,
-        ...data
+    // Google Apps Script는 CORS 제한이 있으므로 여러 방법 시도
+    const payload = {
+      targetSheetUrl,
+      action,
+      ...data
+    }
+
+    // 방법 1: POST with JSON (기본 시도)
+    try {
+      const response = await fetch(GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
       })
+      
+      if (response.ok) {
+        const result = await response.json()
+        
+        if (result.status === 'error') {
+          throw new Error(result.message || '알 수 없는 오류가 발생했습니다.')
+        }
+        
+        return result
+      }
+    } catch (postError) {
+      console.warn('POST 요청 실패, GET 방식으로 재시도:', postError)
+    }
+
+    // 방법 2: GET 방식으로 URL 파라미터 전송 (CORS 문제 회피)
+    const params = new URLSearchParams({
+      targetSheetUrl: encodeURIComponent(targetSheetUrl),
+      action,
+      ...Object.entries(data).reduce((acc, [key, value]) => {
+        acc[key] = typeof value === 'string' ? value : JSON.stringify(value)
+        return acc
+      }, {})
     })
-    
+
+    const getUrl = `${GOOGLE_SCRIPT_URL}?${params.toString()}`
+    const response = await fetch(getUrl, {
+      method: 'GET',
+      mode: 'cors'
+    })
+
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }
+
+    // Google Apps Script는 text/html로 응답할 수 있으므로 처리
+    const contentType = response.headers.get('content-type')
+    let result
     
-    const result = await response.json()
+    if (contentType && contentType.includes('application/json')) {
+      result = await response.json()
+    } else {
+      const text = await response.text()
+      try {
+        result = JSON.parse(text)
+      } catch (e) {
+        // HTML 응답인 경우 JSON 추출 시도
+        const jsonMatch = text.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          result = JSON.parse(jsonMatch[0])
+        } else {
+          throw new Error('응답을 파싱할 수 없습니다.')
+        }
+      }
+    }
     
     if (result.status === 'error') {
       throw new Error(result.message || '알 수 없는 오류가 발생했습니다.')
@@ -38,6 +92,10 @@ export async function sendToGoogleScript(targetSheetUrl, action, data = {}) {
     return result
   } catch (error) {
     console.error('Google Script 통신 오류:', error)
+    // CORS 오류인 경우 더 명확한 메시지 제공
+    if (error.message.includes('Failed to fetch') || error.name === 'TypeError') {
+      throw new Error('Google Apps Script 서버에 연결할 수 없습니다. CORS 설정을 확인하거나 네트워크 연결을 확인해주세요.')
+    }
     throw error
   }
 }

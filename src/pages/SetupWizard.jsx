@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import useGameStore from '../stores/gameStore'
 import { compressAndConvertToBase64, processMultipleImages } from '../utils/imageUtils'
 import { validateSheetUrl, normalizeSheetUrl, loadGameData } from '../services/googleScript'
+import { loadFromLocalStorage } from '../utils/localStorage'
 
 function SetupWizard() {
   const navigate = useNavigate()
@@ -33,6 +34,21 @@ function SetupWizard() {
   const [newVariable, setNewVariable] = useState({ name: '', initial: 0 })
   const [imageFiles, setImageFiles] = useState([])
   const [processingImages, setProcessingImages] = useState(false)
+
+  // 페이지 로드 시 로컬스토리지에서 데이터 불러오기
+  useEffect(() => {
+    const savedData = loadFromLocalStorage()
+    if (savedData) {
+      const shouldLoad = window.confirm(
+        `이전에 저장된 게임 데이터를 찾았습니다.\n불러오시겠습니까?`
+      )
+      if (shouldLoad) {
+        loadDataToStore(savedData)
+        // 에디터로 바로 이동
+        navigate('/editor')
+      }
+    }
+  }, [loadDataToStore, navigate])
 
   // 시트 URL에서 데이터 불러오기
   const handleLoadFromSheet = async () => {

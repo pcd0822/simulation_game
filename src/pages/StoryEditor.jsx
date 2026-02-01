@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import useGameStore from '../stores/gameStore'
 import { generateStorySlides } from '../services/openai'
 import { saveGameData } from '../services/googleScript'
 import { QRCodeSVG } from 'qrcode.react'
+import { saveToLocalStorage, loadFromLocalStorage, getLastSavedTime } from '../utils/localStorage'
 
 function StoryEditor() {
   const {
@@ -28,8 +29,53 @@ function StoryEditor() {
   const [error, setError] = useState('')
   const [showShareModal, setShowShareModal] = useState(false)
   const [shareUrl, setShareUrl] = useState('')
+  const [lastSaved, setLastSaved] = useState(null)
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true)
+  const saveTimeoutRef = useRef(null)
 
   const currentSlide = slides[currentSlideIndex] || null
+
+  // 페이지 로드 시 로컬스토리지에서 데이터 불러오기
+  useEffect(() => {
+    const savedData = loadFromLocalStorage()
+    if (savedData) {
+      const shouldLoad = window.confirm(
+        `이전에 저장된 게임 데이터를 찾았습니다.\n저장 시간: ${savedData.savedAt ? new Date(savedData.savedAt).toLocaleString('ko-KR') : '알 수 없음'}\n불러오시겠습니까?`
+      )
+      if (shouldLoad) {
+        useGameStore.getState().loadGameData(savedData)
+        setLastSaved(savedData.savedAt ? new Date(savedData.savedAt) : null)
+      }
+    }
+  }, [])
+
+  // 게임 데이터 변경 시 자동 저장 (디바운싱)
+  useEffect(() => {
+    if (!autoSaveEnabled || slides.length === 0) return
+
+    // 이전 타이머 취소
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+
+    // 2초 후 자동 저장
+    saveTimeoutRef.current = setTimeout(() => {
+      const gameData = exportGameData()
+      if (gameData && Object.keys(gameData).length > 0) {
+        saveToLocalStorage({
+          ...gameData,
+          sheetUrl: useGameStore.getState().sheetUrl
+        })
+        setLastSaved(new Date())
+      }
+    }, 2000)
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
+    }
+  }, [slides, gameTitle, protagonistName, characterImages, variables, autoSaveEnabled, exportGameData])
 
   // AI 스토리 생성
   const handleGenerateStory = async () => {
@@ -77,11 +123,10 @@ function StoryEditor() {
     }
   }
 
-  // 게임 저장
+  // 게임 저장 (Google Script)
   const handleSave = async () => {
     if (!sheetUrl) {
-      setError('시트 URL이 설정되지 않았습니다.')
-      return
+      setError('시트 URL이 설정되지 않았습니다. 로컬 저장은 계속됩니다.')
     }
 
     if (slides.length === 0) {
@@ -94,15 +139,33 @@ function StoryEditor() {
 
     try {
       const gameData = exportGameData()
-      await saveGameData(sheetUrl, gameData)
       
-      // 공유 URL 생성
-      const encodedUrl = encodeURIComponent(sheetUrl)
-      const baseUrl = window.location.origin
-      const url = `${baseUrl}/play?sheet=${encodedUrl}`
-      setShareUrl(url)
+      // 먼저 로컬스토리지에 저장 (항상 성공)
+      saveToLocalStorage({
+        ...gameData,
+        sheetUrl: useGameStore.getState().sheetUrl
+      })
+      setLastSaved(new Date())
       
-      alert('게임이 성공적으로 저장되었습니다!')
+      // Google Script 저장 시도 (실패해도 로컬 저장은 완료)
+      if (sheetUrl) {
+        try {
+          await saveGameData(sheetUrl, gameData)
+          
+          // 공유 URL 생성
+          const encodedUrl = encodeURIComponent(sheetUrl)
+          const baseUrl = window.location.origin
+          const url = `${baseUrl}/play?sheet=${encodedUrl}`
+          setShareUrl(url)
+          
+          alert('게임이 성공적으로 저장되었습니다!\n(로컬 저장 완료, Google 시트 저장 완료)')
+        } catch (googleError) {
+          console.warn('Google Script 저장 실패, 로컬 저장은 완료됨:', googleError)
+          alert('로컬 저장은 완료되었지만, Google 시트 저장에 실패했습니다.\n오류: ' + googleError.message)
+        }
+      } else {
+        alert('로컬 저장이 완료되었습니다!\nGoogle 시트 URL을 설정하면 클라우드 저장도 가능합니다.')
+      }
     } catch (err) {
       setError('저장 중 오류가 발생했습니다: ' + err.message)
     } finally {
@@ -171,9 +234,26 @@ function StoryEditor() {
       {/* 헤더 */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
+          <div className="flex-1">
             <h1 className="text-2xl font-bold text-gray-800">{gameTitle || '게임 제목'}</h1>
-            <p className="text-sm text-gray-600">주인공: {protagonistName}</p>
+            <div className="flex items-center gap-4 mt-1">
+              <p className="text-sm text-gray-600">주인공: {protagonistName}</p>
+              {lastSaved && (
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                  <span>자동 저장됨: {lastSaved.toLocaleTimeString('ko-KR')}</span>
+                </div>
+              )}
+              <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoSaveEnabled}
+                  onChange={(e) => setAutoSaveEnabled(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span>자동 저장</span>
+              </label>
+            </div>
           </div>
           <div className="flex gap-2">
             <button
