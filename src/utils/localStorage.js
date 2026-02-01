@@ -68,8 +68,7 @@ export function getLastSavedTime() {
   }
   return null
 }
-return null
-}
+
 
 const HISTORY_KEY = 'interactive_story_game_history'
 
