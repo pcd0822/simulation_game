@@ -2,14 +2,14 @@
  * Firestore 데이터베이스 서비스
  * 게임 데이터 저장 및 불러오기
  */
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
   addDoc,
   serverTimestamp,
-  Timestamp 
+  Timestamp
 } from 'firebase/firestore'
 import { db } from './firebase'
 
@@ -75,7 +75,7 @@ export async function loadGameFromFirestore(gameId) {
     }
 
     const data = gameSnap.data()
-    
+
     // Timestamp를 Date로 변환
     const convertedData = {
       ...data,
@@ -95,7 +95,5 @@ export async function loadGameFromFirestore(gameId) {
  * @returns {boolean}
  */
 export function isFirestoreAvailable() {
-  return db !== null && 
-         import.meta.env.VITE_FIREBASE_API_KEY && 
-         import.meta.env.VITE_FIREBASE_PROJECT_ID
+  return db !== null
 }
