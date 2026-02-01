@@ -48,15 +48,29 @@ function StoryEditor() {
 
     try {
       const imageLabels = characterImages.map(img => img.label)
+      console.log('스토리 생성 시작:', { 
+        storyLength: storyText.length, 
+        imageLabels, 
+        variables 
+      })
+      
       const generatedSlides = await generateStorySlides(
         storyText,
         imageLabels,
         variables
       )
 
+      console.log('생성된 슬라이드:', generatedSlides)
+      
+      if (!generatedSlides || generatedSlides.length === 0) {
+        throw new Error('생성된 슬라이드가 없습니다.')
+      }
+
       setSlides(generatedSlides)
       setCurrentSlideIndex(0)
+      setError('')
     } catch (err) {
+      console.error('스토리 생성 오류:', err)
       setError('스토리 생성 중 오류가 발생했습니다: ' + err.message)
     } finally {
       setGenerating(false)
