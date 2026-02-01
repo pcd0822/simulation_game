@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import useGameStore from '../stores/gameStore'
 import { loadGameData } from '../services/googleScript'
+import { decodeGameData } from '../utils/dataExport'
 
 function GamePlayer() {
   const [searchParams] = useSearchParams()
@@ -29,31 +30,66 @@ function GamePlayer() {
   // 게임 데이터 불러오기
   useEffect(() => {
     const loadGame = async () => {
-      if (!sheetUrl) {
-        setError('시트 URL이 제공되지 않았습니다.')
-        setLoading(false)
+      const dataParam = searchParams.get('data')
+      const sheetParam = searchParams.get('sheet')
+
+      // 방법 1: URL에 데이터가 직접 포함된 경우 (우선순위 높음)
+      if (dataParam) {
+        try {
+          const gameData = decodeGameData(dataParam)
+          loadDataToStore(gameData)
+          initGamePlay()
+          setLoading(false)
+          return
+        } catch (err) {
+          console.error('URL 데이터 디코딩 오류:', err)
+          setError('URL에 포함된 게임 데이터를 불러올 수 없습니다: ' + err.message)
+          setLoading(false)
+          return
+        }
+      }
+
+      // 방법 2: 시트 URL을 통한 데이터 불러오기
+      if (sheetParam) {
+        try {
+          const decodedUrl = decodeURIComponent(sheetParam)
+          const data = await loadGameData(decodedUrl)
+          
+          if (data) {
+            loadDataToStore(data)
+            initGamePlay()
+          } else {
+            setError('게임 데이터를 찾을 수 없습니다.')
+          }
+        } catch (err) {
+          setError('게임을 불러오는 중 오류가 발생했습니다: ' + err.message)
+        } finally {
+          setLoading(false)
+        }
         return
       }
 
+      // 방법 3: 로컬스토리지에서 불러오기 (마지막 시도)
       try {
-        const decodedUrl = decodeURIComponent(sheetUrl)
-        const data = await loadGameData(decodedUrl)
-        
-        if (data) {
-          loadDataToStore(data)
+        const { loadFromLocalStorage } = await import('../utils/localStorage')
+        const localData = loadFromLocalStorage()
+        if (localData) {
+          loadDataToStore(localData)
           initGamePlay()
-        } else {
-          setError('게임 데이터를 찾을 수 없습니다.')
+          setLoading(false)
+          return
         }
       } catch (err) {
-        setError('게임을 불러오는 중 오류가 발생했습니다: ' + err.message)
-      } finally {
-        setLoading(false)
+        console.warn('로컬스토리지 불러오기 실패:', err)
       }
+
+      // 모든 방법 실패
+      setError('게임 데이터를 찾을 수 없습니다. 공유 링크에 데이터가 포함되어 있는지 확인해주세요.')
+      setLoading(false)
     }
 
     loadGame()
-  }, [sheetUrl, loadDataToStore, initGamePlay])
+  }, [searchParams, loadDataToStore, initGamePlay])
 
   if (loading) {
     return (

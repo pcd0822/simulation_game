@@ -5,6 +5,8 @@ import { generateStorySlides } from '../services/openai'
 import { saveGameData } from '../services/googleScript'
 import { QRCodeSVG } from 'qrcode.react'
 import { saveToLocalStorage, loadFromLocalStorage, getLastSavedTime } from '../utils/localStorage'
+import { generateShareUrlWithData, generateShareUrlWithSheet, downloadGameData, loadGameDataFromFile } from '../utils/dataExport'
+import { generateImageForSlide, compressImageDataUrl } from '../services/imageGeneration'
 
 function StoryEditor() {
   const {
@@ -32,6 +34,30 @@ function StoryEditor() {
   const [lastSaved, setLastSaved] = useState(null)
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true)
   const saveTimeoutRef = useRef(null)
+  const [generatingImage, setGeneratingImage] = useState(false)
+
+  // 공유 링크 자동 생성 (게임 데이터가 변경될 때마다)
+  useEffect(() => {
+    if (slides.length === 0) {
+      setShareUrl('')
+      return
+    }
+
+    try {
+      const gameData = exportGameData()
+      const baseUrl = window.location.origin
+      const url = generateShareUrlWithData(gameData, baseUrl)
+      setShareUrl(url)
+    } catch (err) {
+      // 데이터가 너무 크면 시트 URL 방식으로 대체
+      if (sheetUrl) {
+        const baseUrl = window.location.origin
+        setShareUrl(generateShareUrlWithSheet(sheetUrl, baseUrl))
+      } else {
+        setShareUrl('')
+      }
+    }
+  }, [slides, gameTitle, protagonistName, characterImages, variables, sheetUrl, exportGameData])
 
   const currentSlide = slides[currentSlideIndex] || null
 
@@ -147,24 +173,39 @@ function StoryEditor() {
       })
       setLastSaved(new Date())
       
+      const baseUrl = window.location.origin
+      
+      // 공유 URL 생성 (데이터 포함 방식 - 항상 작동)
+      try {
+        const urlWithData = generateShareUrlWithData(gameData, baseUrl)
+        setShareUrl(urlWithData)
+      } catch (dataError) {
+        console.warn('URL에 데이터 포함 실패 (데이터가 너무 큼):', dataError)
+        // 데이터가 너무 크면 시트 URL 방식으로 대체
+        if (sheetUrl) {
+          setShareUrl(generateShareUrlWithSheet(sheetUrl, baseUrl))
+        }
+      }
+      
       // Google Script 저장 시도 (실패해도 로컬 저장은 완료)
       if (sheetUrl) {
         try {
           await saveGameData(sheetUrl, gameData)
-          
-          // 공유 URL 생성
-          const encodedUrl = encodeURIComponent(sheetUrl)
-          const baseUrl = window.location.origin
-          const url = `${baseUrl}/play?sheet=${encodedUrl}`
-          setShareUrl(url)
-          
-          alert('게임이 성공적으로 저장되었습니다!\n(로컬 저장 완료, Google 시트 저장 완료)')
+          alert('게임이 성공적으로 저장되었습니다!\n✓ 로컬 저장 완료\n✓ Google 시트 저장 완료\n✓ 공유 링크 생성 완료')
         } catch (googleError) {
           console.warn('Google Script 저장 실패, 로컬 저장은 완료됨:', googleError)
-          alert('로컬 저장은 완료되었지만, Google 시트 저장에 실패했습니다.\n오류: ' + googleError.message)
+          
+          // 에러 메시지를 더 친화적으로 표시
+          const errorMsg = googleError.message.includes('CORS') || googleError.message.includes('연결')
+            ? 'Google 시트 저장에 실패했습니다 (CORS 문제).\n\n' +
+              '하지만 로컬 저장은 완료되었으며, 공유 링크는 정상적으로 작동합니다.\n' +
+              '학생들은 공유 링크를 통해 게임을 플레이할 수 있습니다.'
+            : 'Google 시트 저장에 실패했습니다.\n오류: ' + googleError.message
+          
+          alert('✓ 로컬 저장 완료\n✓ 공유 링크 생성 완료\n\n' + errorMsg)
         }
       } else {
-        alert('로컬 저장이 완료되었습니다!\nGoogle 시트 URL을 설정하면 클라우드 저장도 가능합니다.')
+        alert('✓ 로컬 저장 완료\n✓ 공유 링크 생성 완료\n\n공유 링크를 통해 학생들이 게임을 플레이할 수 있습니다!')
       }
     } catch (err) {
       setError('저장 중 오류가 발생했습니다: ' + err.message)
@@ -308,34 +349,50 @@ function StoryEditor() {
             <div className="w-64 bg-white rounded-lg shadow p-4">
               <h3 className="font-semibold mb-4">슬라이드 목록</h3>
               <div className="space-y-2 max-h-[600px] overflow-y-auto">
-                {slides.map((slide, index) => (
-                  <div
-                    key={slide.id}
-                    onClick={() => setCurrentSlideIndex(index)}
-                    className={`p-3 rounded-lg cursor-pointer border-2 transition ${
-                      index === currentSlideIndex
-                        ? 'border-indigo-600 bg-indigo-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="text-sm font-medium">슬라이드 {index + 1}</div>
-                    <div className="text-xs text-gray-500 truncate mt-1">
-                      {slide.text.substring(0, 30)}...
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        removeSlide(slide.id)
-                        if (currentSlideIndex >= slides.length - 1) {
-                          setCurrentSlideIndex(Math.max(0, slides.length - 2))
-                        }
-                      }}
-                      className="mt-2 text-xs text-red-600 hover:text-red-800"
+                {slides.map((slide, index) => {
+                  const slideImage = characterImages.find(
+                    img => img.label === slide.imageLabel
+                  )
+                  return (
+                    <div
+                      key={slide.id}
+                      onClick={() => setCurrentSlideIndex(index)}
+                      className={`p-3 rounded-lg cursor-pointer border-2 transition ${
+                        index === currentSlideIndex
+                          ? 'border-indigo-600 bg-indigo-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
                     >
-                      삭제
-                    </button>
-                  </div>
-                ))}
+                      {/* 슬라이드 이미지 미리보기 */}
+                      {slideImage && (
+                        <img
+                          src={slideImage.base64}
+                          alt={slideImage.label}
+                          className="w-full h-20 object-cover rounded mb-2"
+                        />
+                      )}
+                      <div className="text-sm font-medium">슬라이드 {index + 1}</div>
+                      <div className="text-xs text-gray-500 truncate mt-1">
+                        {slide.text.substring(0, 30)}...
+                      </div>
+                      <div className="text-xs text-indigo-600 mt-1">
+                        {slide.imageLabel || '이미지 없음'}
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          removeSlide(slide.id)
+                          if (currentSlideIndex >= slides.length - 1) {
+                            setCurrentSlideIndex(Math.max(0, slides.length - 2))
+                          }
+                        }}
+                        className="mt-2 text-xs text-red-600 hover:text-red-800"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
               <button
                 onClick={() => addSlide({ text: '', choices: [] })}
@@ -368,24 +425,114 @@ function StoryEditor() {
                     />
                   </div>
 
-                  {/* 이미지 선택 */}
+                  {/* 이미지 선택 및 미리보기 */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       캐릭터 이미지
                     </label>
-                    <select
-                      value={currentSlide.imageLabel || ''}
-                      onChange={(e) =>
-                        updateSlide(currentSlide.id, { imageLabel: e.target.value })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                    >
-                      {characterImages.map((img) => (
-                        <option key={img.id} value={img.label}>
-                          {img.label}
-                        </option>
-                      ))}
-                    </select>
+                    
+                    {/* 현재 선택된 이미지 미리보기 */}
+                    {(() => {
+                      const currentImage = characterImages.find(
+                        img => img.label === currentSlide.imageLabel
+                      )
+                      return currentImage ? (
+                        <div className="mb-4 p-4 bg-gray-50 rounded-lg border-2 border-indigo-200">
+                          <div className="flex items-center gap-4">
+                            <img
+                              src={currentImage.base64}
+                              alt={currentImage.label}
+                              className="w-32 h-32 object-cover rounded-lg shadow-md"
+                            />
+                            <div className="flex-1">
+                              <p className="font-medium text-gray-700 mb-1">
+                                현재 이미지: {currentImage.label}
+                              </p>
+                              <p className="text-sm text-gray-500">
+                                이 이미지가 게임에서 표시됩니다.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null
+                    })()}
+                    
+                    <div className="flex gap-2">
+                      <select
+                        value={currentSlide.imageLabel || ''}
+                        onChange={(e) =>
+                          updateSlide(currentSlide.id, { imageLabel: e.target.value })
+                        }
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                      >
+                        {characterImages.map((img) => (
+                          <option key={img.id} value={img.label}>
+                            {img.label}
+                          </option>
+                        ))}
+                      </select>
+                      
+                      {/* AI 이미지 생성 버튼 */}
+                      <button
+                        onClick={async () => {
+                          if (!currentSlide.text.trim()) {
+                            alert('먼저 슬라이드의 대사/지문을 입력해주세요.')
+                            return
+                          }
+                          
+                          const baseImage = characterImages.find(
+                            img => img.label === currentSlide.imageLabel
+                          )
+                          
+                          if (!baseImage) {
+                            alert('기본 이미지를 선택해주세요.')
+                            return
+                          }
+                          
+                          setGeneratingImage(true)
+                          setError('')
+                          
+                          try {
+                            // AI 이미지 생성
+                            const generatedImage = await generateImageForSlide(
+                              currentSlide.text,
+                              baseImage.base64,
+                              currentSlide.imageLabel,
+                              protagonistName
+                            )
+                            
+                            // 이미지 압축
+                            const compressedImage = await compressImageDataUrl(generatedImage, 300)
+                            
+                            // 새 이미지로 추가
+                            const newImageLabel = `${currentSlide.imageLabel} (AI 생성)`
+                            useGameStore.getState().addCharacterImage({
+                              label: newImageLabel,
+                              base64: compressedImage,
+                              name: `ai-generated-${Date.now()}.jpg`
+                            })
+                            
+                            // 슬라이드에 새 이미지 적용
+                            updateSlide(currentSlide.id, { imageLabel: newImageLabel })
+                            
+                            alert('AI 이미지가 생성되었습니다!')
+                          } catch (err) {
+                            console.error('이미지 생성 오류:', err)
+                            setError('이미지 생성 중 오류가 발생했습니다: ' + err.message)
+                          } finally {
+                            setGeneratingImage(false)
+                          }
+                        }}
+                        disabled={generatingImage || !currentSlide.text.trim()}
+                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                        title="이 슬라이드의 스토리에 맞는 이미지를 AI로 생성합니다"
+                      >
+                        {generatingImage ? '생성 중...' : '✨ AI 이미지 생성'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      드롭다운에서 이미지를 선택하거나, AI로 스토리에 맞는 이미지를 생성할 수 있습니다.
+                    </p>
                   </div>
 
                   {/* 선택지 편집 */}
@@ -505,32 +652,94 @@ function StoryEditor() {
               className="bg-white rounded-lg p-6 max-w-md w-full mx-4"
             >
               <h3 className="text-xl font-semibold mb-4">게임 공유</h3>
-              {shareUrl ? (
+              {shareUrl || slides.length > 0 ? (
                 <div className="space-y-4">
-                  <div>
+                  {/* 공유 링크 */}
+                  {shareUrl && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        공유 링크 (학생들에게 이 링크를 공유하세요)
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={shareUrl}
+                          readOnly
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded text-xs"
+                        />
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(shareUrl)
+                            alert('링크가 복사되었습니다!')
+                          }}
+                          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 whitespace-nowrap"
+                        >
+                          복사
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        이 링크에는 게임 데이터가 포함되어 있어 Google Script 없이도 작동합니다.
+                      </p>
+                    </div>
+                  )}
+                  
+                  {/* QR 코드 */}
+                  {shareUrl && (
+                    <div className="flex justify-center border-t pt-4">
+                      <QRCodeSVG value={shareUrl} size={200} />
+                    </div>
+                  )}
+                  
+                  {/* 파일 다운로드 */}
+                  <div className="border-t pt-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      공유 링크
+                      파일로 공유하기
                     </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={shareUrl}
-                        readOnly
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded"
-                      />
+                    <div className="space-y-2">
                       <button
                         onClick={() => {
-                          navigator.clipboard.writeText(shareUrl)
-                          alert('링크가 복사되었습니다!')
+                          try {
+                            const gameData = exportGameData()
+                            const filename = `${gameTitle || 'game'}-${Date.now()}.json`
+                            downloadGameData(gameData, filename)
+                            alert('게임 데이터 파일이 다운로드되었습니다!')
+                          } catch (err) {
+                            alert('파일 다운로드 중 오류가 발생했습니다: ' + err.message)
+                          }
                         }}
-                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                        className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                       >
-                        복사
+                        게임 데이터 다운로드 (.json)
                       </button>
+                      <p className="text-xs text-gray-500">
+                        파일을 다운로드하여 다른 방식으로 공유할 수 있습니다.
+                      </p>
                     </div>
                   </div>
-                  <div className="flex justify-center">
-                    <QRCodeSVG value={shareUrl} size={200} />
+                  
+                  {/* 파일 업로드 */}
+                  <div className="border-t pt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      게임 데이터 불러오기
+                    </label>
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        
+                        try {
+                          const gameData = await loadGameDataFromFile(file)
+                          useGameStore.getState().loadGameData(gameData)
+                          alert('게임 데이터를 성공적으로 불러왔습니다!')
+                          setShowShareModal(false)
+                        } catch (err) {
+                          alert('파일 불러오기 중 오류가 발생했습니다: ' + err.message)
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                    />
                   </div>
                 </div>
               ) : (
