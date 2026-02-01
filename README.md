@@ -136,6 +136,30 @@ npm run build
   - `load`: 게임 데이터 불러오기
 - `targetSheetUrl`로 시트 열기 및 데이터 읽기/쓰기
 
+## 배포 (Netlify)
+
+### Netlify 배포 설정
+
+프로젝트에는 Netlify 배포를 위한 설정 파일이 포함되어 있습니다:
+
+- `netlify.toml`: Netlify 빌드 및 리다이렉트 설정
+- `public/_redirects`: SPA 라우팅을 위한 리다이렉트 규칙
+
+### 배포 방법
+
+1. GitHub에 코드 푸시
+2. Netlify에서 "New site from Git" 선택
+3. 저장소 연결 및 빌드 설정:
+   - Build command: `npm run build`
+   - Publish directory: `dist`
+4. 환경 변수 설정:
+   - `VITE_OPENAI_API_KEY`: OpenAI API 키
+   - `VITE_GOOGLE_SCRIPT_URL`: Google Apps Script URL
+
+### SPA 라우팅 문제 해결
+
+페이지를 새로고침하면 404 오류가 발생하는 경우, `public/_redirects` 파일이 제대로 배포되었는지 확인하세요. 이 파일은 모든 경로를 `index.html`로 리다이렉트하여 React Router가 정상 작동하도록 합니다.
+
 ## 라이선스
 
 MIT
