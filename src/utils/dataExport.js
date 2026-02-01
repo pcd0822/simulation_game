@@ -87,16 +87,34 @@ export function loadGameDataFromFile(file) {
  * @param {Object} gameData - 게임 데이터
  * @param {string} baseUrl - 기본 URL
  * @returns {string} 공유 URL
+ * @throws {Error} 데이터가 너무 큰 경우
  */
 export function generateShareUrlWithData(gameData, baseUrl) {
   try {
+    // 데이터 크기 체크 (JSON 문자열 크기)
+    const jsonString = JSON.stringify(gameData)
+    const estimatedEncodedSize = Math.ceil(jsonString.length * 1.37) // Base64 인코딩 크기 추정
+    
+    // URL 길이 제한: 대부분의 브라우저는 약 2000자, 안전하게 1500자로 제한
+    // QR 코드 생성 시에도 제한이 있으므로 더 작게 설정
+    const MAX_URL_LENGTH = 1000 // QR 코드와 브라우저 호환성을 위해 작게 설정
+    
+    if (estimatedEncodedSize > MAX_URL_LENGTH) {
+      throw new Error('데이터가 너무 커서 URL에 포함할 수 없습니다. 파일 다운로드를 사용해주세요.')
+    }
+    
     const encodedData = encodeGameData(gameData)
-    // URL 길이 제한을 고려하여 데이터 포함
-    return `${baseUrl}/play?data=${encodedData}`
+    const fullUrl = `${baseUrl}/play?data=${encodedData}`
+    
+    // 실제 URL 길이도 체크
+    if (fullUrl.length > MAX_URL_LENGTH) {
+      throw new Error('데이터가 너무 커서 URL에 포함할 수 없습니다. 파일 다운로드를 사용해주세요.')
+    }
+    
+    return fullUrl
   } catch (error) {
     console.error('URL 생성 오류:', error)
-    // 데이터가 너무 크면 파일 다운로드 방식으로 안내
-    throw new Error('데이터가 너무 커서 URL에 포함할 수 없습니다. 파일 다운로드를 사용해주세요.')
+    throw error
   }
 }
 

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import useGameStore from '../stores/gameStore'
 import { loadGameData } from '../services/googleScript'
-import { decodeGameData } from '../utils/dataExport'
+import { decodeGameData, loadGameDataFromFile } from '../utils/dataExport'
 
 function GamePlayer() {
   const [searchParams] = useSearchParams()
@@ -36,6 +36,11 @@ function GamePlayer() {
       // 방법 1: URL에 데이터가 직접 포함된 경우 (우선순위 높음)
       if (dataParam) {
         try {
+          // URL 데이터가 너무 긴 경우 체크
+          if (dataParam.length > 2000) {
+            throw new Error('URL에 포함된 데이터가 너무 깁니다. 파일 업로드 방식을 사용하세요.')
+          }
+          
           const gameData = decodeGameData(dataParam)
           loadDataToStore(gameData)
           initGamePlay()
@@ -43,7 +48,18 @@ function GamePlayer() {
           return
         } catch (err) {
           console.error('URL 데이터 디코딩 오류:', err)
-          setError('URL에 포함된 게임 데이터를 불러올 수 없습니다: ' + err.message)
+          
+          // 데이터가 너무 큰 경우 친화적인 메시지
+          if (err.message.includes('too long') || err.message.includes('너무')) {
+            setError(
+              '게임 데이터가 너무 커서 URL에 포함할 수 없습니다.\n\n' +
+              '해결 방법:\n' +
+              '1. 교사에게 게임 데이터 파일(.json)을 요청하세요\n' +
+              '2. 파일을 업로드하여 게임을 플레이할 수 있습니다'
+            )
+          } else {
+            setError('URL에 포함된 게임 데이터를 불러올 수 없습니다: ' + err.message)
+          }
           setLoading(false)
           return
         }
@@ -84,7 +100,14 @@ function GamePlayer() {
       }
 
       // 모든 방법 실패
-      setError('게임 데이터를 찾을 수 없습니다. 공유 링크에 데이터가 포함되어 있는지 확인해주세요.')
+      setError(
+        '게임 데이터를 찾을 수 없습니다.\n\n' +
+        '가능한 원인:\n' +
+        '1. 공유 링크가 올바르지 않음\n' +
+        '2. 게임 데이터가 너무 커서 URL에 포함되지 않음\n\n' +
+        '해결 방법:\n' +
+        '- 교사에게 게임 데이터 파일(.json)을 요청하여 업로드하세요'
+      )
       setLoading(false)
     }
 
@@ -107,7 +130,36 @@ function GamePlayer() {
       <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 flex items-center justify-center">
         <div className="bg-white rounded-lg shadow-xl p-8 max-w-md">
           <h2 className="text-2xl font-bold text-red-600 mb-4">오류</h2>
-          <p className="text-gray-700">{error}</p>
+          <p className="text-gray-700 whitespace-pre-line mb-4">{error}</p>
+          
+          {/* 파일 업로드 옵션 */}
+          <div className="border-t pt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              게임 데이터 파일로 불러오기
+            </label>
+            <input
+              type="file"
+              accept=".json"
+              onChange={async (e) => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                
+                try {
+                  const gameData = await loadGameDataFromFile(file)
+                  loadDataToStore(gameData)
+                  initGamePlay()
+                  setError('')
+                  setLoading(false)
+                } catch (err) {
+                  setError('파일 불러오기 중 오류가 발생했습니다: ' + err.message)
+                }
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+            />
+            <p className="text-xs text-gray-500 mt-2">
+              교사가 제공한 게임 데이터 파일(.json)을 업로드하세요.
+            </p>
+          </div>
         </div>
       </div>
     )

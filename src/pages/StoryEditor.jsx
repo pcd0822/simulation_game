@@ -47,10 +47,31 @@ function StoryEditor() {
     try {
       const gameData = exportGameData()
       const baseUrl = window.location.origin
-      const url = generateShareUrlWithData(gameData, baseUrl)
-      setShareUrl(url)
+      
+      // 데이터 크기 체크
+      const jsonString = JSON.stringify(gameData)
+      const estimatedSize = Math.ceil(jsonString.length * 1.37)
+      
+      // 데이터가 작으면 URL에 포함, 크면 시트 URL 사용
+      if (estimatedSize < 1000 && !sheetUrl) {
+        // 데이터가 작고 시트 URL이 없으면 URL에 포함 시도
+        try {
+          const url = generateShareUrlWithData(gameData, baseUrl)
+          setShareUrl(url)
+        } catch (err) {
+          // 실패하면 공유 링크 없음
+          setShareUrl('')
+        }
+      } else if (sheetUrl) {
+        // 시트 URL이 있으면 시트 URL 방식 사용
+        setShareUrl(generateShareUrlWithSheet(sheetUrl, baseUrl))
+      } else {
+        // 데이터가 크고 시트 URL도 없으면 공유 링크 생성 불가
+        setShareUrl('')
+      }
     } catch (err) {
-      // 데이터가 너무 크면 시트 URL 방식으로 대체
+      console.warn('공유 링크 생성 오류:', err)
+      // 시트 URL이 있으면 시트 URL 방식으로 대체
       if (sheetUrl) {
         const baseUrl = window.location.origin
         setShareUrl(generateShareUrlWithSheet(sheetUrl, baseUrl))
@@ -176,7 +197,7 @@ function StoryEditor() {
       
       const baseUrl = window.location.origin
       
-      // 공유 URL 생성 (데이터 포함 방식 - 항상 작동)
+      // 공유 URL 생성 (데이터 포함 방식 시도)
       try {
         const urlWithData = generateShareUrlWithData(gameData, baseUrl)
         setShareUrl(urlWithData)
@@ -185,6 +206,10 @@ function StoryEditor() {
         // 데이터가 너무 크면 시트 URL 방식으로 대체
         if (sheetUrl) {
           setShareUrl(generateShareUrlWithSheet(sheetUrl, baseUrl))
+        } else {
+          // 시트 URL도 없으면 공유 링크 생성 불가
+          setShareUrl('')
+          console.warn('데이터가 너무 커서 URL에 포함할 수 없고, 시트 URL도 없습니다. 파일 다운로드를 사용하세요.')
         }
       }
       
@@ -649,10 +674,10 @@ function StoryEditor() {
               className="bg-white rounded-lg p-6 max-w-md w-full mx-4"
             >
               <h3 className="text-xl font-semibold mb-4">게임 공유</h3>
-              {shareUrl || slides.length > 0 ? (
+              {slides.length > 0 ? (
                 <div className="space-y-4">
                   {/* 공유 링크 */}
-                  {shareUrl && (
+                  {shareUrl ? (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         공유 링크 (학생들에게 이 링크를 공유하세요)
@@ -675,15 +700,32 @@ function StoryEditor() {
                         </button>
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
-                        이 링크에는 게임 데이터가 포함되어 있어 Google Script 없이도 작동합니다.
+                        {shareUrl.includes('?data=') 
+                          ? '이 링크에는 게임 데이터가 포함되어 있어 Google Script 없이도 작동합니다.'
+                          : '이 링크는 Google 시트에서 데이터를 불러옵니다. 시트가 공유되어 있어야 합니다.'}
                       </p>
+                      {!shareUrl && (
+                        <p className="text-xs text-red-500 mt-1">
+                          데이터가 너무 커서 URL에 포함할 수 없습니다. 파일 다운로드를 사용하세요.
+                        </p>
+                      )}
                     </div>
                   )}
                   
                   {/* QR 코드 */}
-                  {shareUrl && (
+                  {shareUrl && shareUrl.length < 1000 && (
                     <div className="flex justify-center border-t pt-4">
                       <QRCodeSVG value={shareUrl} size={200} />
+                    </div>
+                  )}
+                  {shareUrl && shareUrl.length >= 1000 && (
+                    <div className="border-t pt-4 text-center">
+                      <p className="text-sm text-gray-500 mb-2">
+                        링크가 너무 길어서 QR 코드를 생성할 수 없습니다.
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        링크를 직접 복사하여 공유하거나, 파일 다운로드를 사용하세요.
+                      </p>
                     </div>
                   )}
                   
@@ -738,6 +780,24 @@ function StoryEditor() {
                       className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
                     />
                   </div>
+                  
+                  {/* 공유 링크가 없는 경우 안내 */}
+                  {!shareUrl && (
+                    <div className="border-t pt-4">
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <p className="text-sm text-yellow-800 font-medium mb-2">
+                          ⚠️ 공유 링크를 생성할 수 없습니다
+                        </p>
+                        <p className="text-xs text-yellow-700 mb-3">
+                          게임 데이터가 너무 커서 URL에 포함할 수 없습니다. 
+                          파일 다운로드 방식을 사용하여 학생들에게 공유하세요.
+                        </p>
+                        <p className="text-xs text-yellow-600">
+                          또는 Google 시트 URL을 설정하면 시트 기반 공유 링크를 생성할 수 있습니다.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <p className="text-gray-500">

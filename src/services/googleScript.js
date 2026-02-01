@@ -27,12 +27,15 @@ export async function sendToGoogleScript(targetSheetUrl, action, data = {}) {
   
   // 방법 1: POST with JSON (기본)
   try {
+    // Google Apps Script Web App은 배포 시 자동으로 CORS를 처리하지만,
+    // 때때로 명시적으로 설정이 필요할 수 있습니다.
     const response = await fetch(GOOGLE_SCRIPT_URL, {
       method: 'POST',
       mode: 'cors',
       credentials: 'omit',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json'
       },
       body: JSON.stringify(payload)
     })
@@ -123,13 +126,25 @@ export async function sendToGoogleScript(targetSheetUrl, action, data = {}) {
     } catch (getError) {
       console.warn('GET 요청도 실패:', getError.message)
       // 최종 실패 - CORS 또는 네트워크 문제
+      const errorDetails = {
+        postError: postError.message,
+        getError: getError.message,
+        scriptUrl: GOOGLE_SCRIPT_URL
+      }
+      console.error('Google Script 통신 실패 상세:', errorDetails)
+      
       throw new Error(
-        'Google Apps Script에 연결할 수 없습니다. ' +
+        'Google Apps Script에 연결할 수 없습니다.\n\n' +
         '가능한 원인:\n' +
-        '1. Google Apps Script가 "웹 앱으로 배포"되어 있지 않음\n' +
-        '2. CORS 설정 문제 (doGet/doPost에서 CORS 헤더 설정 필요)\n' +
+        '1. Google Apps Script가 "웹 앱으로 배포"되지 않았거나 배포 설정이 잘못됨\n' +
+        '   - 배포 → 새 배포 → 유형: "웹 앱"\n' +
+        '   - 실행 사용자: "나"\n' +
+        '   - 액세스 권한: "모든 사용자"\n' +
+        '2. 배포 URL이 올바르지 않음 (끝에 /exec가 있어야 함)\n' +
         '3. 네트워크 연결 문제\n\n' +
-        '로컬 저장은 정상적으로 작동합니다.'
+        '해결 방법:\n' +
+        '- DEPLOYMENT_GUIDE.md 파일을 참고하여 배포 설정을 확인하세요\n' +
+        '- 로컬 저장은 정상적으로 작동하므로 게임은 계속 사용할 수 있습니다.'
       )
     }
   }
