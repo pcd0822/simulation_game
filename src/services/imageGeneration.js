@@ -88,30 +88,82 @@ Focus: character's ${imageLabel} facial expression and emotion.`
 
     console.log('이미지 URL 받음, 다운로드 시작:', imageUrl)
 
-    // URL에서 이미지를 가져와서 Base64로 변환
-    const imageResponse = await fetch(imageUrl, {
-      method: 'GET',
-      mode: 'cors'
-    })
-
-    if (!imageResponse.ok) {
-      throw new Error(`이미지 다운로드 실패: ${imageResponse.status}`)
-    }
-
-    const blob = await imageResponse.blob()
-    console.log('이미지 다운로드 완료, Base64 변환 시작')
-    
+    // CORS 문제를 우회하기 위해 Image 객체와 Canvas를 사용하여 Base64로 변환
     return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        console.log('Base64 변환 완료')
-        resolve(reader.result)
+      const img = new Image()
+      
+      // CORS 문제를 우회하기 위해 crossOrigin 설정
+      img.crossOrigin = 'anonymous'
+      
+      // 타임아웃 설정 (30초)
+      const timeout = setTimeout(() => {
+        reject(new Error('이미지 로드 시간이 초과되었습니다.'))
+      }, 30000)
+      
+      img.onload = () => {
+        clearTimeout(timeout)
+        try {
+          console.log('이미지 로드 완료, Canvas 변환 시작:', { width: img.width, height: img.height })
+          
+          // Canvas 생성
+          const canvas = document.createElement('canvas')
+          canvas.width = img.width
+          canvas.height = img.height
+          
+          // Canvas에 이미지 그리기
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(img, 0, 0)
+          
+          // Base64로 변환
+          const base64 = canvas.toDataURL('image/png')
+          console.log('Base64 변환 완료')
+          resolve(base64)
+        } catch (canvasError) {
+          console.error('Canvas 변환 오류:', canvasError)
+          reject(new Error('이미지를 Base64로 변환할 수 없습니다: ' + canvasError.message))
+        }
       }
-      reader.onerror = (error) => {
-        console.error('FileReader 오류:', error)
-        reject(new Error('이미지 변환에 실패했습니다.'))
+      
+      img.onerror = (error) => {
+        clearTimeout(timeout)
+        console.error('이미지 로드 오류:', error)
+        
+        // CORS 오류인 경우, 프록시를 통한 다운로드 시도
+        console.warn('직접 로드 실패, 프록시를 통한 다운로드 시도...')
+        
+        // 방법 1: CORS 프록시 사용 (public CORS proxy)
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`
+        
+        fetch(proxyUrl)
+          .then(response => {
+            if (!response.ok) {
+              throw new Error(`프록시 요청 실패: ${response.status}`)
+            }
+            return response.blob()
+          })
+          .then(blob => {
+            const reader = new FileReader()
+            reader.onloadend = () => {
+              console.log('프록시를 통한 Base64 변환 완료')
+              resolve(reader.result)
+            }
+            reader.onerror = () => reject(new Error('이미지 변환에 실패했습니다.'))
+            reader.readAsDataURL(blob)
+          })
+          .catch(proxyError => {
+            console.error('프록시 방법도 실패:', proxyError)
+            reject(new Error(
+              '이미지를 다운로드할 수 없습니다.\n\n' +
+              '원인: CORS 정책으로 인해 Azure Blob Storage의 이미지에 직접 접근할 수 없습니다.\n\n' +
+              '해결 방법:\n' +
+              '1. CORS 비활성화 브라우저 확장 프로그램 사용\n' +
+              '2. 또는 다른 방법으로 이미지를 생성해주세요.'
+            ))
+          })
       }
-      reader.readAsDataURL(blob)
+      
+      // 이미지 로드 시작
+      img.src = imageUrl
     })
   } catch (error) {
     console.error('이미지 생성 오류 상세:', {
