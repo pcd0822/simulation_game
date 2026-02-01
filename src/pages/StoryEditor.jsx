@@ -493,6 +493,12 @@ function StoryEditor() {
                           setError('')
                           
                           try {
+                            console.log('이미지 생성 시작:', {
+                              slideText: currentSlide.text.substring(0, 50),
+                              imageLabel: currentSlide.imageLabel,
+                              protagonistName
+                            })
+                            
                             // AI 이미지 생성
                             const generatedImage = await generateImageForSlide(
                               currentSlide.text,
@@ -501,8 +507,12 @@ function StoryEditor() {
                               protagonistName
                             )
                             
+                            console.log('이미지 생성 완료, 압축 시작')
+                            
                             // 이미지 압축
                             const compressedImage = await compressImageDataUrl(generatedImage, 300)
+                            
+                            console.log('이미지 압축 완료, 저장 시작')
                             
                             // 새 이미지로 추가
                             const newImageLabel = `${currentSlide.imageLabel} (AI 생성)`
@@ -515,10 +525,23 @@ function StoryEditor() {
                             // 슬라이드에 새 이미지 적용
                             updateSlide(currentSlide.id, { imageLabel: newImageLabel })
                             
-                            alert('AI 이미지가 생성되었습니다!')
+                            alert('AI 이미지가 성공적으로 생성되었습니다!')
+                            setError('')
                           } catch (err) {
-                            console.error('이미지 생성 오류:', err)
-                            setError('이미지 생성 중 오류가 발생했습니다: ' + err.message)
+                            console.error('이미지 생성 오류 상세:', err)
+                            const errorMessage = err.message || '알 수 없는 오류가 발생했습니다.'
+                            setError('이미지 생성 실패: ' + errorMessage)
+                            
+                            // 사용자에게 친화적인 메시지 표시
+                            alert(
+                              '이미지 생성에 실패했습니다.\n\n' +
+                              '오류: ' + errorMessage + '\n\n' +
+                              '가능한 해결 방법:\n' +
+                              '1. OpenAI API 키가 올바르게 설정되었는지 확인\n' +
+                              '2. 인터넷 연결 확인\n' +
+                              '3. 브라우저 콘솔(F12)에서 자세한 오류 확인\n' +
+                              '4. 잠시 후 다시 시도'
+                            )
                           } finally {
                             setGeneratingImage(false)
                           }
