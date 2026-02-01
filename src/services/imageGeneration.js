@@ -87,6 +87,11 @@ Focus: character's ${imageLabel} facial expression and emotion.`
     }
 
     console.log('이미지 URL 받음, 다운로드 시작:', imageUrl)
+    
+    // 이미지 URL을 전역 변수에 저장 (오류 발생 시 사용)
+    if (typeof window !== 'undefined') {
+      window.lastGeneratedImageUrl = imageUrl
+    }
 
     // CORS 문제를 우회하기 위해 Image 객체와 Canvas를 사용하여 Base64로 변환
     return new Promise((resolve, reject) => {
@@ -128,38 +133,88 @@ Focus: character's ${imageLabel} facial expression and emotion.`
         clearTimeout(timeout)
         console.error('이미지 로드 오류:', error)
         
-        // CORS 오류인 경우, 프록시를 통한 다운로드 시도
+        // CORS 오류인 경우, 여러 프록시를 순차적으로 시도
         console.warn('직접 로드 실패, 프록시를 통한 다운로드 시도...')
         
-        // 방법 1: CORS 프록시 사용 (public CORS proxy)
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`
+        // 여러 CORS 프록시 서비스 목록
+        const proxyServices = [
+          {
+            name: 'allorigins',
+            url: `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`
+          },
+          {
+            name: 'corsproxy',
+            url: `https://corsproxy.io/?${encodeURIComponent(imageUrl)}`
+          },
+          {
+            name: 'cors-anywhere',
+            url: `https://cors-anywhere.herokuapp.com/${imageUrl}`
+          }
+        ]
         
-        fetch(proxyUrl)
-          .then(response => {
-            if (!response.ok) {
-              throw new Error(`프록시 요청 실패: ${response.status}`)
-            }
-            return response.blob()
-          })
-          .then(blob => {
-            const reader = new FileReader()
-            reader.onloadend = () => {
-              console.log('프록시를 통한 Base64 변환 완료')
-              resolve(reader.result)
-            }
-            reader.onerror = () => reject(new Error('이미지 변환에 실패했습니다.'))
-            reader.readAsDataURL(blob)
-          })
-          .catch(proxyError => {
-            console.error('프록시 방법도 실패:', proxyError)
-            reject(new Error(
-              '이미지를 다운로드할 수 없습니다.\n\n' +
-              '원인: CORS 정책으로 인해 Azure Blob Storage의 이미지에 직접 접근할 수 없습니다.\n\n' +
+        // 프록시를 순차적으로 시도
+        let proxyIndex = 0
+        
+        const tryNextProxy = () => {
+          if (proxyIndex >= proxyServices.length) {
+            // 모든 프록시 실패 시, 이미지 URL을 포함한 오류 메시지 반환
+            console.warn('모든 프록시 실패, 이미지 URL 제공:', imageUrl)
+            const error = new Error(
+              '이미지를 자동으로 다운로드할 수 없습니다 (CORS 문제).\n\n' +
+              '이미지 URL: ' + imageUrl + '\n\n' +
               '해결 방법:\n' +
-              '1. CORS 비활성화 브라우저 확장 프로그램 사용\n' +
-              '2. 또는 다른 방법으로 이미지를 생성해주세요.'
-            ))
+              '1. 위 URL을 복사하여 새 탭에서 열기\n' +
+              '2. 이미지를 우클릭하여 "이미지로 저장"\n' +
+              '3. 저장한 이미지를 다시 업로드\n\n' +
+              '또는 CORS 비활성화 브라우저 확장 프로그램을 사용하세요.'
+            )
+            // 이미지 URL을 error 객체에 저장
+            error.imageUrl = imageUrl
+            reject(error)
+            return
+          }
+          
+          const proxy = proxyServices[proxyIndex]
+          console.log(`프록시 시도 ${proxyIndex + 1}/${proxyServices.length}: ${proxy.name}`)
+          
+          fetch(proxy.url, {
+            method: 'GET',
+            headers: {
+              'X-Requested-With': 'XMLHttpRequest'
+            }
           })
+            .then(response => {
+              if (!response.ok) {
+                throw new Error(`프록시 요청 실패: ${response.status}`)
+              }
+              return response.blob()
+            })
+            .then(blob => {
+              if (!blob || blob.size === 0) {
+                throw new Error('빈 응답을 받았습니다.')
+              }
+              
+              const reader = new FileReader()
+              reader.onloadend = () => {
+                console.log(`${proxy.name} 프록시를 통한 Base64 변환 완료`)
+                resolve(reader.result)
+              }
+              reader.onerror = () => {
+                console.error(`${proxy.name} 프록시: 이미지 변환 실패`)
+                proxyIndex++
+                tryNextProxy()
+              }
+              reader.readAsDataURL(blob)
+            })
+            .catch(proxyError => {
+              console.warn(`${proxy.name} 프록시 실패:`, proxyError.message)
+              proxyIndex++
+              tryNextProxy()
+            })
+        }
+        
+        // 첫 번째 프록시 시도
+        tryNextProxy()
       }
       
       // 이미지 로드 시작

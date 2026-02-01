@@ -532,16 +532,55 @@ function StoryEditor() {
                             const errorMessage = err.message || '알 수 없는 오류가 발생했습니다.'
                             setError('이미지 생성 실패: ' + errorMessage)
                             
-                            // 사용자에게 친화적인 메시지 표시
-                            alert(
-                              '이미지 생성에 실패했습니다.\n\n' +
-                              '오류: ' + errorMessage + '\n\n' +
-                              '가능한 해결 방법:\n' +
-                              '1. OpenAI API 키가 올바르게 설정되었는지 확인\n' +
-                              '2. 인터넷 연결 확인\n' +
-                              '3. 브라우저 콘솔(F12)에서 자세한 오류 확인\n' +
-                              '4. 잠시 후 다시 시도'
-                            )
+                            // CORS 오류인 경우 이미지 URL을 추출하여 제공
+                            if (errorMessage.includes('CORS') || errorMessage.includes('다운로드할 수 없습니다')) {
+                              // 오류 객체에서 이미지 URL 추출
+                              const imageUrl = err.imageUrl || 
+                                errorMessage.match(/https?:\/\/[^\s\n]+/)?.[0] ||
+                                window.lastGeneratedImageUrl
+                              
+                              if (imageUrl) {
+                                const shouldCopy = window.confirm(
+                                  '이미지 다운로드에 실패했습니다 (CORS 문제).\n\n' +
+                                  '이미지 URL을 클립보드에 복사하시겠습니까?\n' +
+                                  '복사 후 새 탭에서 열어 이미지를 저장할 수 있습니다.'
+                                )
+                                
+                                if (shouldCopy) {
+                                  navigator.clipboard.writeText(imageUrl).then(() => {
+                                    alert(
+                                      '이미지 URL이 클립보드에 복사되었습니다!\n\n' +
+                                      '다음 단계:\n' +
+                                      '1. 새 탭에서 URL 열기 (Ctrl+V 또는 주소창에 붙여넣기)\n' +
+                                      '2. 이미지를 우클릭하여 "이미지로 저장"\n' +
+                                      '3. 저장한 이미지를 캐릭터 이미지로 다시 업로드'
+                                    )
+                                  }).catch(() => {
+                                    alert('클립보드 복사에 실패했습니다.\n\n이미지 URL:\n' + imageUrl)
+                                  })
+                                }
+                              } else {
+                                // 이미지 URL을 찾을 수 없는 경우
+                                alert(
+                                  '이미지 다운로드에 실패했습니다.\n\n' +
+                                  'CORS 문제로 인해 이미지를 자동으로 다운로드할 수 없습니다.\n\n' +
+                                  '해결 방법:\n' +
+                                  '1. CORS 비활성화 브라우저 확장 프로그램 사용\n' +
+                                  '2. 또는 다른 방법으로 이미지를 생성해주세요.'
+                                )
+                              }
+                            } else {
+                              // 일반 오류
+                              alert(
+                                '이미지 생성에 실패했습니다.\n\n' +
+                                '오류: ' + errorMessage + '\n\n' +
+                                '가능한 해결 방법:\n' +
+                                '1. OpenAI API 키가 올바르게 설정되었는지 확인\n' +
+                                '2. 인터넷 연결 확인\n' +
+                                '3. 브라우저 콘솔(F12)에서 자세한 오류 확인\n' +
+                                '4. 잠시 후 다시 시도'
+                              )
+                            }
                           } finally {
                             setGeneratingImage(false)
                           }
