@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import useGameStore from '../stores/gameStore'
 import { loadGameData } from '../services/googleScript'
 import { decodeGameData, loadGameDataFromFile } from '../utils/dataExport'
+import { loadGameFromFirestore, isFirestoreAvailable } from '../services/firestore'
 
 function GamePlayer() {
   const [searchParams] = useSearchParams()
@@ -30,10 +31,33 @@ function GamePlayer() {
   // 게임 데이터 불러오기
   useEffect(() => {
     const loadGame = async () => {
+      const gameIdParam = searchParams.get('id')
       const dataParam = searchParams.get('data')
       const sheetParam = searchParams.get('sheet')
 
-      // 방법 1: URL에 데이터가 직접 포함된 경우 (우선순위 높음)
+      // 방법 1: Firestore ID로 불러오기 (최우선)
+      if (gameIdParam && isFirestoreAvailable()) {
+        try {
+          const gameData = await loadGameFromFirestore(gameIdParam)
+          if (gameData) {
+            loadDataToStore(gameData)
+            initGamePlay()
+            setLoading(false)
+            return
+          } else {
+            setError('게임을 찾을 수 없습니다. 게임 ID를 확인해주세요.')
+            setLoading(false)
+            return
+          }
+        } catch (err) {
+          console.error('Firestore 불러오기 오류:', err)
+          setError('게임을 불러오는 중 오류가 발생했습니다: ' + err.message)
+          setLoading(false)
+          return
+        }
+      }
+
+      // 방법 2: URL에 데이터가 직접 포함된 경우
       if (dataParam) {
         try {
           // URL 데이터가 너무 긴 경우 체크
@@ -65,7 +89,7 @@ function GamePlayer() {
         }
       }
 
-      // 방법 2: 시트 URL을 통한 데이터 불러오기
+      // 방법 3: 시트 URL을 통한 데이터 불러오기
       if (sheetParam) {
         try {
           const decodedUrl = decodeURIComponent(sheetParam)
@@ -85,7 +109,7 @@ function GamePlayer() {
         return
       }
 
-      // 방법 3: 로컬스토리지에서 불러오기 (마지막 시도)
+      // 방법 4: 로컬스토리지에서 불러오기 (마지막 시도)
       try {
         const { loadFromLocalStorage } = await import('../utils/localStorage')
         const localData = loadFromLocalStorage()

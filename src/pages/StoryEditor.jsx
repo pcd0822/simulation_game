@@ -6,6 +6,7 @@ import { saveGameData } from '../services/googleScript'
 import { QRCodeSVG } from 'qrcode.react'
 import { saveToLocalStorage, loadFromLocalStorage, getLastSavedTime } from '../utils/localStorage'
 import { generateShareUrlWithData, generateShareUrlWithSheet, downloadGameData, loadGameDataFromFile } from '../utils/dataExport'
+import { saveGameToFirestore, isFirestoreAvailable } from '../services/firestore'
 import { compressAndConvertToBase64, resizeTo1920x1080 } from '../utils/imageUtils'
 
 function StoryEditor() {
@@ -36,6 +37,7 @@ function StoryEditor() {
   const saveTimeoutRef = useRef(null)
   const [uploadingImage, setUploadingImage] = useState(false)
   const fileInputRef = useRef(null)
+  const [firestoreGameId, setFirestoreGameId] = useState(null) // Firestore 게임 ID 저장
 
   // 공유 링크 자동 생성 (게임 데이터가 변경될 때마다)
   useEffect(() => {
@@ -44,42 +46,48 @@ function StoryEditor() {
       return
     }
 
-    try {
-      const gameData = exportGameData()
-      const baseUrl = window.location.origin
-      
-      // 데이터 크기 체크
-      const jsonString = JSON.stringify(gameData)
-      const estimatedSize = Math.ceil(jsonString.length * 1.37)
-      
-      // 데이터가 작으면 URL에 포함, 크면 시트 URL 사용
-      if (estimatedSize < 1000 && !sheetUrl) {
-        // 데이터가 작고 시트 URL이 없으면 URL에 포함 시도
-        try {
-          const url = generateShareUrlWithData(gameData, baseUrl)
-          setShareUrl(url)
-        } catch (err) {
-          // 실패하면 공유 링크 없음
+      try {
+        const gameData = exportGameData()
+        const baseUrl = window.location.origin
+        
+        // 1순위: Firestore ID가 있으면 사용
+        if (firestoreGameId && isFirestoreAvailable()) {
+          setShareUrl(`${baseUrl}/play?id=${firestoreGameId}`)
+          return
+        }
+        
+        // 2순위: 데이터 크기 체크하여 URL에 포함 시도
+        const jsonString = JSON.stringify(gameData)
+        const estimatedSize = Math.ceil(jsonString.length * 1.37)
+        
+        // 데이터가 작으면 URL에 포함, 크면 시트 URL 사용
+        if (estimatedSize < 1000 && !sheetUrl) {
+          // 데이터가 작고 시트 URL이 없으면 URL에 포함 시도
+          try {
+            const url = generateShareUrlWithData(gameData, baseUrl)
+            setShareUrl(url)
+          } catch (err) {
+            // 실패하면 공유 링크 없음
+            setShareUrl('')
+          }
+        } else if (sheetUrl) {
+          // 시트 URL이 있으면 시트 URL 방식 사용
+          setShareUrl(generateShareUrlWithSheet(sheetUrl, baseUrl))
+        } else {
+          // 데이터가 크고 시트 URL도 없으면 공유 링크 생성 불가
           setShareUrl('')
         }
-      } else if (sheetUrl) {
-        // 시트 URL이 있으면 시트 URL 방식 사용
-        setShareUrl(generateShareUrlWithSheet(sheetUrl, baseUrl))
-      } else {
-        // 데이터가 크고 시트 URL도 없으면 공유 링크 생성 불가
-        setShareUrl('')
+      } catch (err) {
+        console.warn('공유 링크 생성 오류:', err)
+        // 시트 URL이 있으면 시트 URL 방식으로 대체
+        if (sheetUrl) {
+          const baseUrl = window.location.origin
+          setShareUrl(generateShareUrlWithSheet(sheetUrl, baseUrl))
+        } else {
+          setShareUrl('')
+        }
       }
-    } catch (err) {
-      console.warn('공유 링크 생성 오류:', err)
-      // 시트 URL이 있으면 시트 URL 방식으로 대체
-      if (sheetUrl) {
-        const baseUrl = window.location.origin
-        setShareUrl(generateShareUrlWithSheet(sheetUrl, baseUrl))
-      } else {
-        setShareUrl('')
-      }
-    }
-  }, [slides, gameTitle, protagonistName, characterImages, variables, sheetUrl, exportGameData])
+  }, [slides, gameTitle, protagonistName, characterImages, variables, sheetUrl, firestoreGameId, exportGameData])
 
   const currentSlide = slides[currentSlideIndex] || null
 
@@ -93,6 +101,10 @@ function StoryEditor() {
       if (shouldLoad) {
         useGameStore.getState().loadGameData(savedData)
         setLastSaved(savedData.savedAt ? new Date(savedData.savedAt) : null)
+        // Firestore ID도 복원
+        if (savedData.firestoreGameId) {
+          setFirestoreGameId(savedData.firestoreGameId)
+        }
       }
     }
   }, [])
@@ -191,12 +203,32 @@ function StoryEditor() {
       // 먼저 로컬스토리지에 저장 (항상 성공)
       saveToLocalStorage({
         ...gameData,
-        sheetUrl: useGameStore.getState().sheetUrl
+        sheetUrl: useGameStore.getState().sheetUrl,
+        firestoreGameId // Firestore ID도 함께 저장
       })
       setLastSaved(new Date())
       
       const baseUrl = window.location.origin
       
+      // 1순위: Firestore 저장 시도
+      if (isFirestoreAvailable()) {
+        try {
+          const gameId = await saveGameToFirestore(gameData, firestoreGameId)
+          setFirestoreGameId(gameId)
+          
+          // Firestore ID로 공유 링크 생성
+          setShareUrl(`${baseUrl}/play?id=${gameId}`)
+          alert('게임이 Firestore에 성공적으로 저장되었습니다!\n✓ 로컬 저장 완료\n✓ Firestore 저장 완료\n✓ 공유 링크 생성 완료')
+          setError('')
+          setSaving(false)
+          return
+        } catch (firestoreError) {
+          console.warn('Firestore 저장 실패:', firestoreError.message)
+          // Firestore 실패 시 기존 방식으로 폴백
+        }
+      }
+      
+      // 2순위: Firestore가 없거나 실패한 경우 기존 방식
       // 공유 URL 생성 (데이터 포함 방식 시도)
       try {
         const urlWithData = generateShareUrlWithData(gameData, baseUrl)
