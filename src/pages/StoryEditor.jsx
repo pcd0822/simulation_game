@@ -677,7 +677,7 @@ function StoryEditor() {
               {slides.length > 0 ? (
                 <div className="space-y-4">
                   {/* 공유 링크 */}
-                  {shareUrl ? (
+                  {shareUrl && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         공유 링크 (학생들에게 이 링크를 공유하세요)
@@ -704,11 +704,6 @@ function StoryEditor() {
                           ? '이 링크에는 게임 데이터가 포함되어 있어 Google Script 없이도 작동합니다.'
                           : '이 링크는 Google 시트에서 데이터를 불러옵니다. 시트가 공유되어 있어야 합니다.'}
                       </p>
-                      {!shareUrl && (
-                        <p className="text-xs text-red-500 mt-1">
-                          데이터가 너무 커서 URL에 포함할 수 없습니다. 파일 다운로드를 사용하세요.
-                        </p>
-                      )}
                     </div>
                   )}
                   
