@@ -13,7 +13,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'firebase-vendor': ['firebase'],
           'ui-vendor': ['framer-motion', 'qrcode.react']
         }
       }
