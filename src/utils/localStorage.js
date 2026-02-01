@@ -68,3 +68,58 @@ export function getLastSavedTime() {
   }
   return null
 }
+return null
+}
+
+const HISTORY_KEY = 'interactive_story_game_history'
+
+/**
+ * 게임 히스토리 저장 (목록 관리)
+ * @param {Object} gameData - 게임 데이터 (id, title, thumbnail 등 포함)
+ */
+export function saveGameHistory(gameData) {
+  try {
+    const history = getGameHistory()
+
+    // 필수 정보만 추출하여 저장
+    const gameInfo = {
+      id: gameData.firestoreGameId || `local_${Date.now()}`,
+      title: gameData.gameTitle || '제목 없음',
+      thumbnail: gameData.characterImages?.[0]?.base64 || null,
+      updatedAt: new Date().toISOString(),
+      firestoreId: gameData.firestoreGameId
+    }
+
+    // 이미 존재하는 게임이면 업데이트, 아니면 추가
+    const existingIndex = history.findIndex(g =>
+      (gameInfo.firestoreId && g.firestoreId === gameInfo.firestoreId) ||
+      (g.title === gameInfo.title) // 제목이 같으면 같은 게임으로 간주 (간단한 로직)
+    )
+
+    let newHistory
+    if (existingIndex >= 0) {
+      newHistory = [...history]
+      newHistory[existingIndex] = { ...newHistory[existingIndex], ...gameInfo }
+    } else {
+      newHistory = [gameInfo, ...history]
+    }
+
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(newHistory))
+  } catch (error) {
+    console.error('히스토리 저장 오류:', error)
+  }
+}
+
+/**
+ * 저장된 게임 목록 불러오기
+ * @returns {Array} 게임 정보 목록
+ */
+export function getGameHistory() {
+  try {
+    const data = localStorage.getItem(HISTORY_KEY)
+    return data ? JSON.parse(data) : []
+  } catch (error) {
+    console.error('히스토리 불러오기 오류:', error)
+    return []
+  }
+}

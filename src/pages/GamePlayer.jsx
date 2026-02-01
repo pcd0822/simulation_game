@@ -64,7 +64,7 @@ function GamePlayer() {
           if (dataParam.length > 2000) {
             throw new Error('URL에 포함된 데이터가 너무 깁니다. 파일 업로드 방식을 사용하세요.')
           }
-          
+
           const gameData = decodeGameData(dataParam)
           loadDataToStore(gameData)
           initGamePlay()
@@ -72,7 +72,7 @@ function GamePlayer() {
           return
         } catch (err) {
           console.error('URL 데이터 디코딩 오류:', err)
-          
+
           // 데이터가 너무 큰 경우 친화적인 메시지
           if (err.message.includes('too long') || err.message.includes('너무')) {
             setError(
@@ -94,7 +94,7 @@ function GamePlayer() {
         try {
           const decodedUrl = decodeURIComponent(sheetParam)
           const data = await loadGameData(decodedUrl)
-          
+
           if (data) {
             loadDataToStore(data)
             initGamePlay()
@@ -155,7 +155,7 @@ function GamePlayer() {
         <div className="bg-white rounded-lg shadow-xl p-8 max-w-md">
           <h2 className="text-2xl font-bold text-red-600 mb-4">오류</h2>
           <p className="text-gray-700 whitespace-pre-line mb-4">{error}</p>
-          
+
           {/* 파일 업로드 옵션 */}
           <div className="border-t pt-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -167,7 +167,7 @@ function GamePlayer() {
               onChange={async (e) => {
                 const file = e.target.files?.[0]
                 if (!file) return
-                
+
                 try {
                   const gameData = await loadGameDataFromFile(file)
                   loadDataToStore(gameData)
@@ -215,12 +215,17 @@ function GamePlayer() {
         <div className="max-w-4xl mx-auto px-4 py-4">
           <h1 className="text-2xl font-bold text-gray-800">{gameTitle}</h1>
           <div className="flex gap-4 mt-2">
-            {Object.entries(playerVariables).map(([name, value]) => (
-              <div key={name} className="text-sm">
-                <span className="font-medium">{name}:</span>{' '}
-                <span className="text-indigo-600">{value}</span>
-              </div>
-            ))}
+            {/* 변수(점수) 표시 숨김 처리됨 */}
+            {/* 
+            <div className="flex gap-4 mt-2">
+              {Object.entries(playerVariables).map(([name, value]) => (
+                <div key={name} className="text-sm">
+                  <span className="font-medium">{name}:</span>{' '}
+                  <span className="text-indigo-600">{value}</span>
+                </div>
+              ))}
+            </div>
+            */}
           </div>
         </div>
       </div>
@@ -267,6 +272,8 @@ function GamePlayer() {
                       className="w-full p-4 text-left bg-indigo-50 hover:bg-indigo-100 border-2 border-indigo-200 rounded-lg transition"
                     >
                       <div className="font-medium text-indigo-900">{choice.text}</div>
+                      {/* 변수 변화 표시 숨김 */}
+                      {/*
                       {choice.variableChanges && Object.keys(choice.variableChanges).length > 0 && (
                         <div className="text-xs text-indigo-600 mt-1">
                           {Object.entries(choice.variableChanges).map(([varName, change]) => (
@@ -276,6 +283,7 @@ function GamePlayer() {
                           ))}
                         </div>
                       )}
+                      */}
                     </motion.button>
                   ))}
                 </div>

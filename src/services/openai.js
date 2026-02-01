@@ -19,8 +19,8 @@ export async function generateStorySlides(storyText, imageLabels = [], variables
   }
 
   const variableNames = variables.map(v => v.name).join(', ')
-  const imageLabelList = imageLabels.length > 0 
-    ? imageLabels.join(', ') 
+  const imageLabelList = imageLabels.length > 0
+    ? imageLabels.join(', ')
     : '기본 표정'
 
   const systemPrompt = `당신은 인터랙티브 스토리 게임 제작을 도와주는 AI 어시스턴트입니다.
@@ -89,10 +89,10 @@ ${storyText}
     const data = await response.json()
     const content = data.choices[0]?.message?.content
 
-    console.log('OpenAI API 응답:', { 
-      hasContent: !!content, 
+    console.log('OpenAI API 응답:', {
+      hasContent: !!content,
       contentLength: content?.length,
-      contentPreview: content?.substring(0, 200) 
+      contentPreview: content?.substring(0, 200)
     })
 
     if (!content) {
@@ -102,9 +102,9 @@ ${storyText}
     // JSON 파싱 - 응답에서 JSON 배열 추출
     let parsedContent
     let rawContent = content.trim()
-    
+
     console.log('원본 응답 (처음 500자):', rawContent.substring(0, 500))
-    
+
     // 마크다운 코드 블록 제거 (```json ... ```)
     if (rawContent.includes('```')) {
       const codeBlockMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/)
@@ -113,7 +113,7 @@ ${storyText}
         console.log('코드 블록 제거 후:', rawContent.substring(0, 200))
       }
     }
-    
+
     // JSON 배열 찾기
     const arrayMatch = rawContent.match(/\[[\s\S]*\]/)
     if (arrayMatch) {
@@ -136,10 +136,10 @@ ${storyText}
     }
 
     // slides 배열 추출
-    let slides = Array.isArray(parsedContent) 
-      ? parsedContent 
+    let slides = Array.isArray(parsedContent)
+      ? parsedContent
       : parsedContent.slides || parsedContent.data || []
-    
+
     if (!Array.isArray(slides) || slides.length === 0) {
       throw new Error('생성된 슬라이드가 없습니다. 응답 형식을 확인해주세요.')
     }
@@ -162,7 +162,7 @@ ${storyText}
             // 마지막 슬라이드의 선택지는 null
             nextSlideId = null
           }
-          
+
           return {
             ...choice,
             id: choice.id || `choice_${index}_${choiceIndex}`,
@@ -190,6 +190,95 @@ ${storyText}
     return slides
   } catch (error) {
     console.error('OpenAI API 오류:', error)
+    throw error
+  }
+}
+
+/**
+ * 다음 장면(슬라이드) 생성
+ * @param {Object} currentSlide - 현재 슬라이드 데이터
+ * @param {Object} choice - 선택한 선택지 데이터
+ * @param {Array} variables - 게임 변수 배열
+ * @param {Array} imageLabels - 사용 가능한 이미지 라벨
+ * @returns {Promise<Object>} 생성된 단일 슬라이드
+ */
+export async function generateNextSlide(currentSlide, choice, variables = [], imageLabels = []) {
+  if (!OPENAI_API_KEY || OPENAI_API_KEY === 'your_openai_api_key_here') {
+    throw new Error('OpenAI API 키가 설정되지 않았습니다.')
+  }
+
+  const variableNames = variables.map(v => v.name).join(', ')
+  const imageLabelList = imageLabels.length > 0
+    ? imageLabels.join(', ')
+    : '기본 표정'
+
+  const systemPrompt = `당신은 인터랙티브 스토리 게임 작가입니다.
+사용자의 이전 장면과 선택을 바탕으로, 이어지는 다음 장면(슬라이드)을 하나만 생성해야 합니다.
+
+사용 가능한 이미지 라벨: ${imageLabelList}
+게임 변수: ${variableNames}
+
+응답은 반드시 유효한 JSON 객체(단일 슬라이드) 형식이어야 합니다:
+{
+  "text": "장면의 대사/지문",
+  "imageLabel": "이미지 라벨",
+  "choices": [
+    {
+      "text": "선택지 텍스트",
+      "variableChanges": { "변수명": 숫자값 }
+    }
+  ]
+}
+
+- 선택지는 2~3개 생성하세요.
+- nextSlideId나 id는 포함하지 마세요(자동 생성됨).
+- 이전 선택의 결과가 자연스럽게 이어져야 합니다.`
+
+  const userPrompt = `이전 장면: "${currentSlide.text}"
+  
+사용자의 선택: "${choice.text}" (변수 변화: ${JSON.stringify(choice.variableChanges)})
+
+위 선택에 이어지는 다음 장면을 생성해주세요.
+반드시 JSON 객체 하나만 반환하세요.`
+
+  try {
+    const response = await fetch(OPENAI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.7
+      })
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.error?.message || `API 오류: ${response.status}`)
+    }
+
+    const data = await response.json()
+    const content = data.choices[0]?.message?.content
+
+    if (!content) throw new Error('API 응답 내용 없음')
+
+    // JSON 파싱 (코드 블록 처리 포함)
+    let rawContent = content.trim()
+    if (rawContent.includes('```')) {
+      const match = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/)
+      if (match) rawContent = match[1].trim()
+    }
+
+    return JSON.parse(rawContent)
+
+  } catch (error) {
+    console.error('다음 장면 생성 오류:', error)
     throw error
   }
 }
