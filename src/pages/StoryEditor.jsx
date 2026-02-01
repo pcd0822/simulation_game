@@ -6,7 +6,7 @@ import { saveGameData } from '../services/googleScript'
 import { QRCodeSVG } from 'qrcode.react'
 import { saveToLocalStorage, loadFromLocalStorage, getLastSavedTime } from '../utils/localStorage'
 import { generateShareUrlWithData, generateShareUrlWithSheet, downloadGameData, loadGameDataFromFile } from '../utils/dataExport'
-import { generateImageForSlide, compressImageDataUrl } from '../services/imageGeneration'
+import { compressAndConvertToBase64, resizeTo1920x1080 } from '../utils/imageUtils'
 
 function StoryEditor() {
   const {
@@ -34,7 +34,8 @@ function StoryEditor() {
   const [lastSaved, setLastSaved] = useState(null)
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true)
   const saveTimeoutRef = useRef(null)
-  const [generatingImage, setGeneratingImage] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const fileInputRef = useRef(null)
 
   // 공유 링크 자동 생성 (게임 데이터가 변경될 때마다)
   useEffect(() => {
@@ -472,128 +473,62 @@ function StoryEditor() {
                         ))}
                       </select>
                       
-                      {/* AI 이미지 생성 버튼 */}
-                      <button
-                        onClick={async () => {
-                          if (!currentSlide.text.trim()) {
-                            alert('먼저 슬라이드의 대사/지문을 입력해주세요.')
-                            return
-                          }
+                      {/* 이미지 업로드 버튼 */}
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
                           
-                          const baseImage = characterImages.find(
-                            img => img.label === currentSlide.imageLabel
-                          )
-                          
-                          if (!baseImage) {
-                            alert('기본 이미지를 선택해주세요.')
-                            return
-                          }
-                          
-                          setGeneratingImage(true)
+                          setUploadingImage(true)
                           setError('')
                           
                           try {
-                            console.log('이미지 생성 시작:', {
-                              slideText: currentSlide.text.substring(0, 50),
-                              imageLabel: currentSlide.imageLabel,
-                              protagonistName
-                            })
-                            
-                            // AI 이미지 생성
-                            const generatedImage = await generateImageForSlide(
-                              currentSlide.text,
-                              baseImage.base64,
-                              currentSlide.imageLabel,
-                              protagonistName
-                            )
-                            
-                            console.log('이미지 생성 완료, 압축 시작')
-                            
-                            // 이미지 압축
-                            const compressedImage = await compressImageDataUrl(generatedImage, 300)
-                            
-                            console.log('이미지 압축 완료, 저장 시작')
+                            // 이미지를 1920x1080 해상도로 리사이징
+                            const resizedImage = await resizeTo1920x1080(file)
                             
                             // 새 이미지로 추가
-                            const newImageLabel = `${currentSlide.imageLabel} (AI 생성)`
+                            const newImageLabel = `${currentSlide.imageLabel || '새 이미지'} (업로드)`
                             useGameStore.getState().addCharacterImage({
                               label: newImageLabel,
-                              base64: compressedImage,
-                              name: `ai-generated-${Date.now()}.jpg`
+                              base64: resizedImage,
+                              name: file.name
                             })
                             
                             // 슬라이드에 새 이미지 적용
                             updateSlide(currentSlide.id, { imageLabel: newImageLabel })
                             
-                            alert('AI 이미지가 성공적으로 생성되었습니다!')
+                            alert('이미지가 성공적으로 업로드되었습니다!')
                             setError('')
                           } catch (err) {
-                            console.error('이미지 생성 오류 상세:', err)
-                            const errorMessage = err.message || '알 수 없는 오류가 발생했습니다.'
-                            setError('이미지 생성 실패: ' + errorMessage)
-                            
-                            // CORS 오류인 경우 이미지 URL을 추출하여 제공
-                            if (errorMessage.includes('CORS') || errorMessage.includes('다운로드할 수 없습니다')) {
-                              // 오류 객체에서 이미지 URL 추출
-                              const imageUrl = err.imageUrl || 
-                                errorMessage.match(/https?:\/\/[^\s\n]+/)?.[0] ||
-                                window.lastGeneratedImageUrl
-                              
-                              if (imageUrl) {
-                                const shouldCopy = window.confirm(
-                                  '이미지 다운로드에 실패했습니다 (CORS 문제).\n\n' +
-                                  '이미지 URL을 클립보드에 복사하시겠습니까?\n' +
-                                  '복사 후 새 탭에서 열어 이미지를 저장할 수 있습니다.'
-                                )
-                                
-                                if (shouldCopy) {
-                                  navigator.clipboard.writeText(imageUrl).then(() => {
-                                    alert(
-                                      '이미지 URL이 클립보드에 복사되었습니다!\n\n' +
-                                      '다음 단계:\n' +
-                                      '1. 새 탭에서 URL 열기 (Ctrl+V 또는 주소창에 붙여넣기)\n' +
-                                      '2. 이미지를 우클릭하여 "이미지로 저장"\n' +
-                                      '3. 저장한 이미지를 캐릭터 이미지로 다시 업로드'
-                                    )
-                                  }).catch(() => {
-                                    alert('클립보드 복사에 실패했습니다.\n\n이미지 URL:\n' + imageUrl)
-                                  })
-                                }
-                              } else {
-                                // 이미지 URL을 찾을 수 없는 경우
-                                alert(
-                                  '이미지 다운로드에 실패했습니다.\n\n' +
-                                  'CORS 문제로 인해 이미지를 자동으로 다운로드할 수 없습니다.\n\n' +
-                                  '해결 방법:\n' +
-                                  '1. CORS 비활성화 브라우저 확장 프로그램 사용\n' +
-                                  '2. 또는 다른 방법으로 이미지를 생성해주세요.'
-                                )
-                              }
-                            } else {
-                              // 일반 오류
-                              alert(
-                                '이미지 생성에 실패했습니다.\n\n' +
-                                '오류: ' + errorMessage + '\n\n' +
-                                '가능한 해결 방법:\n' +
-                                '1. OpenAI API 키가 올바르게 설정되었는지 확인\n' +
-                                '2. 인터넷 연결 확인\n' +
-                                '3. 브라우저 콘솔(F12)에서 자세한 오류 확인\n' +
-                                '4. 잠시 후 다시 시도'
-                              )
-                            }
+                            console.error('이미지 업로드 오류:', err)
+                            setError('이미지 업로드 실패: ' + (err.message || '알 수 없는 오류'))
+                            alert('이미지 업로드에 실패했습니다: ' + (err.message || '알 수 없는 오류'))
                           } finally {
-                            setGeneratingImage(false)
+                            setUploadingImage(false)
+                            // 파일 입력 초기화
+                            if (fileInputRef.current) {
+                              fileInputRef.current.value = ''
+                            }
                           }
                         }}
-                        disabled={generatingImage || !currentSlide.text.trim()}
+                      />
+                      <button
+                        onClick={() => {
+                          fileInputRef.current?.click()
+                        }}
+                        disabled={uploadingImage}
                         className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                        title="이 슬라이드의 스토리에 맞는 이미지를 AI로 생성합니다"
+                        title="이 슬라이드에 사용할 이미지를 업로드합니다"
                       >
-                        {generatingImage ? '생성 중...' : '✨ AI 이미지 생성'}
+                        {uploadingImage ? '업로드 중...' : '📷 이미지 업로드'}
                       </button>
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
-                      드롭다운에서 이미지를 선택하거나, AI로 스토리에 맞는 이미지를 생성할 수 있습니다.
+                      드롭다운에서 이미지를 선택하거나, 새로운 이미지를 업로드할 수 있습니다.
                     </p>
                   </div>
 
