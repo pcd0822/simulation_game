@@ -6,12 +6,12 @@ import { getFirestore } from 'firebase/firestore'
 
 // 환경 변수에서 Firebase 설정 가져오기
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyBr4xQGn667Wah6neQc6vmjhrtdi5kIK08",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "simulation-game-8f449.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "simulation-game-8f449",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "simulation-game-8f449.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "790879775390",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:790879775390:web:0d4c581de26cf778a3698f"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 }
 
 // Firebase 초기화

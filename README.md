@@ -5,10 +5,10 @@
 ## 기술 스택
 
 - **Frontend**: React, Vite, Tailwind CSS, Framer Motion
-- **Backend**: Google Apps Script Web App (마스터 프록시 패턴)
+- **Backend**: Firebase Firestore
 - **AI**: OpenAI API (GPT-4o)
 - **State Management**: Zustand
-- **Database**: Google Spreadsheets
+- **Database**: Firebase Firestore
 
 ## 주요 기능
 
@@ -48,10 +48,20 @@ npm install
 
 `.env` 파일을 생성하고 다음 내용을 입력하세요:
 
-```
+```env
+# Firebase 설정
+VITE_FIREBASE_API_KEY=your_firebase_api_key
+VITE_FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-project-id.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+VITE_FIREBASE_APP_ID=your_app_id
+
+# OpenAI API 키
 VITE_OPENAI_API_KEY=your_openai_api_key_here
-VITE_GOOGLE_SCRIPT_URL=https://script.google.com/macros/s/AKfycbwt_cf4lhHGQiILtEAGAA4hr41-9lecFo8MTSkbukwFFXVNX-yis-Z3UyfFE0daoQlU/exec
 ```
+
+자세한 설정 방법은 [FIRESTORE_SETUP.md](./FIRESTORE_SETUP.md)를 참고하세요.
 
 ### 3. 개발 서버 실행
 
@@ -64,6 +74,17 @@ npm run dev
 ```bash
 npm run build
 ```
+
+## 배포 가이드
+
+다른 사람이 이 프로젝트를 사용할 수 있도록 배포하는 방법은 **[DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)**를 참고하세요.
+
+배포 과정 요약:
+1. GitHub에 코드 업로드
+2. Firebase 프로젝트 설정
+3. 로컬 환경 변수 설정 (`.env` 파일)
+4. Netlify 환경 변수 설정
+5. Netlify 배포
 
 ## 아키텍처
 
