@@ -766,21 +766,21 @@ function StoryEditor() {
                           </div>
 
                           {/* AI 분기 생성 버튼 */}
-                          {!choice.nextSlideId && (
-                            <div className="mb-3">
-                              <button
-                                onClick={() => handleGenerateNextSlide(choice.id)}
-                                disabled={generatingBranch === choice.id}
-                                className="text-sm px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 flex items-center gap-2"
-                              >
-                                {generatingBranch === choice.id ? (
-                                  <><span>✨</span> 생성 중...</>
-                                ) : (
-                                  <><span>✨</span> 이 선택지로 이어지는 다음 장면 AI 생성</>
-                                )}
-                              </button>
-                            </div>
-                          )}
+                          <div className="mb-3">
+                            <button
+                              onClick={() => handleGenerateNextSlide(choice.id)}
+                              disabled={generatingBranch === choice.id}
+                              className="text-sm px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 flex items-center gap-2 disabled:opacity-50"
+                            >
+                              {generatingBranch === choice.id ? (
+                                <><span>✨</span> 생성 중...</>
+                              ) : choice.nextSlideId ? (
+                                <><span>✨</span> 이 선택지로 이어지는 다음 장면 AI로 다시 생성</>
+                              ) : (
+                                <><span>✨</span> 이 선택지로 이어지는 다음 장면 AI 생성</>
+                              )}
+                            </button>
+                          </div>
 
                           {/* 변수 변화 설정 */}
                           <div className="text-sm text-gray-600 bg-white p-2 rounded border border-gray-200">

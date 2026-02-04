@@ -16,6 +16,7 @@ function GamePlayer() {
     characterImages,
     slides,
     quests,
+    variables,
     playerVariables,
     currentSlideId,
     questStatus,
@@ -32,10 +33,43 @@ function GamePlayer() {
   const [showResultModal, setShowResultModal] = useState(false)
   const [studentNickname, setStudentNickname] = useState('')
   const [submittingResult, setSubmittingResult] = useState(false)
+  const [showNicknameModal, setShowNicknameModal] = useState(false)
+  const [displayedText, setDisplayedText] = useState('')
+  const [isTyping, setIsTyping] = useState(false)
   const gameIdRef = useRef(null)
+  const typingTimeoutRef = useRef(null)
 
   const currentSlide = slides.find(s => s.id === currentSlideId)
   const currentImage = characterImages.find(img => img.label === currentSlide?.imageLabel)
+
+  // 타이핑 효과
+  useEffect(() => {
+    if (!currentSlide) return
+
+    setIsTyping(true)
+    setDisplayedText('')
+
+    const fullText = currentSlide.text || ''
+    let currentIndex = 0
+
+    const typeChar = () => {
+      if (currentIndex < fullText.length) {
+        setDisplayedText(fullText.substring(0, currentIndex + 1))
+        currentIndex++
+        typingTimeoutRef.current = setTimeout(typeChar, 30) // 타이핑 속도 조절
+      } else {
+        setIsTyping(false)
+      }
+    }
+
+    typeChar()
+
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+    }
+  }, [currentSlideId, currentSlide?.text])
 
   // 퀘스트 완료 체크
   useEffect(() => {
@@ -142,6 +176,7 @@ function GamePlayer() {
             loadDataToStore(gameData)
             initGamePlay()
             setLoading(false)
+            setShowNicknameModal(true) // 닉네임 입력 모달 표시
             return
           } else {
             setError('게임을 찾을 수 없습니다. 게임 ID를 확인해주세요.')
@@ -168,6 +203,7 @@ function GamePlayer() {
           loadDataToStore(gameData)
           initGamePlay()
           setLoading(false)
+          setShowNicknameModal(true)
           return
         } catch (err) {
           console.error('URL 데이터 디코딩 오류:', err)
@@ -197,6 +233,7 @@ function GamePlayer() {
           if (data) {
             loadDataToStore(data)
             initGamePlay()
+            setShowNicknameModal(true)
           } else {
             setError('게임 데이터를 찾을 수 없습니다.')
           }
@@ -216,6 +253,7 @@ function GamePlayer() {
           loadDataToStore(localData)
           initGamePlay()
           setLoading(false)
+          setShowNicknameModal(true)
           return
         }
       } catch (err) {
@@ -273,6 +311,7 @@ function GamePlayer() {
                   initGamePlay()
                   setError('')
                   setLoading(false)
+                  setShowNicknameModal(true)
                 } catch (err) {
                   setError('파일 불러오기 중 오류가 발생했습니다: ' + err.message)
                 }
@@ -410,38 +449,197 @@ function GamePlayer() {
     )
   }
 
+  // 변수 최소/최대값 계산 (게이지바용)
+  const getVariableRange = (varName) => {
+    const variable = variables.find(v => v.name === varName)
+    const initial = variable?.initial || 0
+    const current = playerVariables[varName] || initial
+    
+    // 최소값과 최대값 추정 (초기값 기준으로 ±100 범위)
+    const min = Math.min(initial - 100, current - 50, 0)
+    const max = Math.max(initial + 100, current + 50, 100)
+    
+    return { min, max, current, initial }
+  }
+
+  // 퀘스트 진행률 계산
+  const getQuestProgress = (quest, index) => {
+    const questId = `quest_${index}`
+    const status = questStatus[questId]
+    
+    if (status?.completed) {
+      return { completed: true, progress: 100 }
+    }
+
+    if (quest.type === 'score') {
+      const range = getVariableRange(quest.targetVariable)
+      const progress = Math.min(100, Math.max(0, (range.current / (quest.targetScore || 100)) * 100))
+      return { completed: false, progress }
+    } else if (quest.type === 'scene') {
+      // 장면 퀘스트는 현재 슬라이드가 목표인지 확인
+      const isAtTarget = currentSlideId === quest.targetSlideId || currentSlide?.questSuccessScene
+      return { completed: isAtTarget, progress: isAtTarget ? 100 : 0 }
+    }
+
+    return { completed: false, progress: 0 }
+  }
+
+  // 닉네임 입력 모달
+  if (showNicknameModal) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full"
+        >
+          <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">게임 시작</h2>
+          <p className="text-gray-600 mb-6 text-center">
+            닉네임을 입력하고 게임을 시작하세요
+          </p>
+          <input
+            type="text"
+            value={studentNickname}
+            onChange={(e) => setStudentNickname(e.target.value)}
+            placeholder="닉네임 입력"
+            maxLength={20}
+            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-lg"
+            onKeyPress={(e) => {
+              if (e.key === 'Enter' && studentNickname.trim()) {
+                setShowNicknameModal(false)
+              }
+            }}
+            autoFocus
+          />
+          <button
+            onClick={() => {
+              if (studentNickname.trim()) {
+                setShowNicknameModal(false)
+              } else {
+                alert('닉네임을 입력해주세요.')
+              }
+            }}
+            disabled={!studentNickname.trim()}
+            className="w-full mt-4 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            시작하기
+          </button>
+        </motion.div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 relative overflow-hidden">
-      {/* 배경 이미지 - 크게 표시 */}
+      {/* 배경 이미지 - 크게 표시 (모핑 애니메이션) */}
       {currentImage && (
         <div className="fixed inset-0 z-0">
-          <motion.img
-            key={currentImage.id}
-            src={currentImage.base64}
-            alt={currentImage.label}
-            initial={{ opacity: 0, scale: 1.1 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-            className="w-full h-full object-cover"
-            style={{ filter: 'brightness(0.7)' }}
-          />
+          <AnimatePresence mode="wait">
+            <motion.img
+              key={currentSlideId}
+              src={currentImage.base64}
+              alt={currentImage.label}
+              initial={{ opacity: 0, scale: 1.2, filter: 'blur(10px)' }}
+              animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, scale: 0.9, filter: 'blur(10px)' }}
+              transition={{ duration: 0.8, ease: 'easeInOut' }}
+              className="w-full h-full object-cover"
+              style={{ filter: 'brightness(0.7)' }}
+            />
+          </AnimatePresence>
         </div>
       )}
+
+      {/* 좌측 상단 스코어 보드 */}
+      <div className="fixed top-4 left-4 z-30 w-64">
+        <motion.div
+          initial={{ opacity: 0, x: -50 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border-2 border-white/50 p-4"
+        >
+          <h3 className="text-lg font-bold text-gray-800 mb-3">스코어</h3>
+          
+          {/* 변수별 게이지바 */}
+          <div className="space-y-3 mb-4">
+            {variables.map((variable) => {
+              const range = getVariableRange(variable.name)
+              const percentage = ((range.current - range.min) / (range.max - range.min)) * 100
+              
+              return (
+                <div key={variable.name} className="space-y-1">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="font-medium text-gray-700">{variable.name}</span>
+                    <span className="font-bold text-indigo-600">{range.current}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.max(0, Math.min(100, percentage))}%` }}
+                      transition={{ duration: 0.5, ease: 'easeOut' }}
+                      className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* 퀘스트 보드 */}
+          {quests && quests.some(q => q.enabled) && (
+            <div className="border-t border-gray-300 pt-3 mt-3">
+              <h3 className="text-lg font-bold text-gray-800 mb-3">퀘스트</h3>
+              <div className="space-y-2">
+                {quests
+                  .filter(q => q.enabled)
+                  .map((quest, index) => {
+                    const questId = `quest_${index}`
+                    const status = questStatus[questId]
+                    const progress = getQuestProgress(quest, index)
+                    const isCompleted = status?.completed || progress.completed
+
+                    return (
+                      <div
+                        key={index}
+                        className={`p-2 rounded-lg text-sm ${
+                          isCompleted ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className="text-lg mt-0.5">
+                            {isCompleted ? '✓' : '○'}
+                          </span>
+                          <div className="flex-1">
+                            <div
+                              className={`font-medium ${
+                                isCompleted ? 'line-through text-gray-500' : 'text-gray-800'
+                              }`}
+                            >
+                              {quest.type === 'score' 
+                                ? `${quest.targetVariable} ${quest.targetScore}점 달성`
+                                : '목표 장면 도달'}
+                            </div>
+                            {!isCompleted && quest.type === 'score' && (
+                              <div className="text-xs text-gray-600 mt-1">
+                                진행률: {Math.round(progress.progress)}%
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            </div>
+          )}
+        </motion.div>
+      </div>
 
       {/* 헤더 (반투명) */}
       <div className="relative z-10 bg-black/30 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-4 py-3">
           <h1 className="text-xl font-bold text-white drop-shadow-lg">{gameTitle}</h1>
-          {/* 변수 표시 (옵션) */}
-          {Object.keys(playerVariables).length > 0 && (
-            <div className="flex gap-4 mt-2">
-              {Object.entries(playerVariables).map(([name, value]) => (
-                <div key={name} className="text-sm text-white drop-shadow">
-                  <span className="font-medium">{name}:</span>{' '}
-                  <span className="text-yellow-300 font-bold">{value}</span>
-                </div>
-              ))}
-            </div>
+          {studentNickname && (
+            <p className="text-sm text-white/80 drop-shadow mt-1">플레이어: {studentNickname}</p>
           )}
         </div>
       </div>
@@ -451,20 +649,28 @@ function GamePlayer() {
         <div className="max-w-6xl mx-auto px-4 pb-6">
           <AnimatePresence mode="wait">
             <motion.div
-              key={currentSlide.id}
-              initial={{ opacity: 0, y: 100 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 100 }}
+              key={currentSlideId}
+              initial={{ opacity: 0, y: 100, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 100, scale: 0.95 }}
+              transition={{ duration: 0.5, ease: 'easeInOut' }}
               className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border-2 border-white/50 overflow-hidden"
             >
-              {/* 대사/지문 */}
+              {/* 대사/지문 (타이핑 효과) */}
               <div className="p-6">
                 <div className="text-lg text-gray-800 leading-relaxed mb-6 min-h-[80px]">
-                  {currentSlide.text}
+                  {displayedText}
+                  {isTyping && (
+                    <motion.span
+                      animate={{ opacity: [1, 0] }}
+                      transition={{ duration: 0.8, repeat: Infinity, repeatType: 'reverse' }}
+                      className="inline-block w-0.5 h-5 bg-indigo-600 ml-1"
+                    />
+                  )}
                 </div>
 
-                {/* 선택지 */}
-                {currentSlide.choices && currentSlide.choices.length > 0 ? (
+                {/* 선택지 (타이핑 완료 후에만 표시) */}
+                {!isTyping && currentSlide.choices && currentSlide.choices.length > 0 ? (
                   <div className="space-y-3">
                     {currentSlide.choices.map((choice, index) => (
                       <motion.button
@@ -481,7 +687,7 @@ function GamePlayer() {
                       </motion.button>
                     ))}
                   </div>
-                ) : (
+                ) : !isTyping && (
                   <div className="text-center py-6">
                     <p className="text-gray-500 text-lg">스토리가 끝났습니다.</p>
                   </div>
