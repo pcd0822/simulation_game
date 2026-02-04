@@ -103,16 +103,29 @@ function StoryEditor() {
 
   // 페이지 로드 시 로컬스토리지에서 데이터 불러오기
   useEffect(() => {
+    const skipPrompt = sessionStorage.getItem('skipLoadPrompt')
+    
     const savedData = loadFromLocalStorage()
     if (savedData) {
-      const shouldLoad = window.confirm(
-        `이전에 작업 중이던 게임 데이터를 찾았습니다.\n저장 시간: ${savedData.savedAt ? new Date(savedData.savedAt).toLocaleString('ko-KR') : '알 수 없음'}\n불러오시겠습니까?`
-      )
-      if (shouldLoad) {
+      // SetupWizard에서 온 경우 팝업 없이 자동 로드
+      if (skipPrompt === 'true') {
+        sessionStorage.removeItem('skipLoadPrompt')
         useGameStore.getState().loadGameData(savedData)
         setLastSaved(savedData.savedAt ? new Date(savedData.savedAt) : null)
         if (savedData.firestoreGameId) {
           setFirestoreGameId(savedData.firestoreGameId)
+        }
+      } else {
+        // 일반적인 경우에만 확인 팝업 표시
+        const shouldLoad = window.confirm(
+          `이전에 작업 중이던 게임 데이터를 찾았습니다.\n저장 시간: ${savedData.savedAt ? new Date(savedData.savedAt).toLocaleString('ko-KR') : '알 수 없음'}\n불러오시겠습니까?`
+        )
+        if (shouldLoad) {
+          useGameStore.getState().loadGameData(savedData)
+          setLastSaved(savedData.savedAt ? new Date(savedData.savedAt) : null)
+          if (savedData.firestoreGameId) {
+            setFirestoreGameId(savedData.firestoreGameId)
+          }
         }
       }
     }
@@ -566,49 +579,6 @@ function StoryEditor() {
               >
                 + 슬라이드 추가
               </button>
-
-              {/* 퀘스트 장면 설정 */}
-              {quests && quests.some(q => q.enabled && q.type === 'scene') && (
-                <div className="mt-4 p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
-                  <h4 className="font-semibold text-yellow-900 mb-3">퀘스트 장면 설정</h4>
-                  <p className="text-sm text-yellow-800 mb-3">
-                    아래에서 퀘스트 성공 장면으로 지정할 슬라이드를 선택하세요.
-                  </p>
-                  <div className="space-y-2">
-                    {quests
-                      .filter(q => q.enabled && q.type === 'scene')
-                      .map((quest, questIndex) => {
-                        const actualIndex = quests.findIndex(q => q === quest)
-                        return (
-                          <div key={actualIndex} className="flex items-center gap-2">
-                            <label className="text-sm font-medium text-yellow-900 flex-1">
-                              장면 퀘스트 {actualIndex + 1}:
-                            </label>
-                            <select
-                              value={quest.targetSlideId || ''}
-                              onChange={(e) => {
-                                const updatedQuests = [...quests]
-                                updatedQuests[actualIndex] = {
-                                  ...updatedQuests[actualIndex],
-                                  targetSlideId: e.target.value
-                                }
-                                useGameStore.getState().setQuests(updatedQuests)
-                              }}
-                              className="flex-1 px-3 py-1 text-sm border border-yellow-300 rounded"
-                            >
-                              <option value="">슬라이드 선택...</option>
-                              {slides.map((slide) => (
-                                <option key={slide.id} value={slide.id}>
-                                  슬라이드 {slides.indexOf(slide) + 1}: {slide.text.substring(0, 30)}...
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )
-                      })}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* 현재 슬라이드 편집 */}

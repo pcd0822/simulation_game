@@ -122,3 +122,20 @@ export function getGameHistory() {
     return []
   }
 }
+
+/**
+ * 히스토리에서 게임 삭제
+ * @param {string} gameId - 게임 ID (firestoreId 또는 id)
+ */
+export function removeGameFromHistory(gameId) {
+  try {
+    const history = getGameHistory()
+    const newHistory = history.filter(g => 
+      g.firestoreId !== gameId && g.id !== gameId
+    )
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(newHistory))
+    console.log('히스토리에서 게임 삭제 완료:', gameId)
+  } catch (error) {
+    console.error('히스토리 삭제 오류:', error)
+  }
+}

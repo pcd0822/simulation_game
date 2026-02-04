@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import useGameStore from '../stores/gameStore'
 import { compressAndConvertToBase64, processMultipleImages } from '../utils/imageUtils'
-import { loadFromLocalStorage, clearLocalStorage, getGameHistory, saveToLocalStorage } from '../utils/localStorage'
+import { loadFromLocalStorage, clearLocalStorage, getGameHistory, saveToLocalStorage, removeGameFromHistory } from '../utils/localStorage'
 import { getGamesList, loadGameFromFirestore, isFirestoreAvailable } from '../services/firestore'
 
 function SetupWizard() {
@@ -40,6 +40,7 @@ function SetupWizard() {
   const [savedDraft, setSavedDraft] = useState(null)
   const [savedStories, setSavedStories] = useState([])
   const [loadingStories, setLoadingStories] = useState(false)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
 
   // 홈 진입 시: 저장된 초안 및 스토리 목록 불러오기
   useEffect(() => {
@@ -116,8 +117,49 @@ function SetupWizard() {
 
   const handleDeleteDraft = () => {
     if (!window.confirm('저장된 초안을 삭제할까요?')) return
+    
+    const draft = loadFromLocalStorage()
+    if (draft) {
+      // 히스토리에서도 제거
+      if (draft.firestoreGameId) {
+        removeGameFromHistory(draft.firestoreGameId)
+      }
+      // 제목으로도 찾아서 삭제 시도
+      const history = getGameHistory()
+      const matchingHistory = history.find(g => g.title === draft.gameTitle)
+      if (matchingHistory) {
+        removeGameFromHistory(matchingHistory.id || matchingHistory.firestoreId)
+      }
+    }
+    
     clearLocalStorage()
     setSavedDraft(null)
+    loadSavedStories() // 목록 새로고침
+    alert('삭제되었습니다.')
+  }
+
+  // 저장된 스토리 삭제
+  const handleDeleteStory = (e, story) => {
+    e.stopPropagation() // 클릭 이벤트 전파 방지
+    
+    if (!window.confirm(`"${story.title}" 스토리를 삭제할까요?`)) return
+
+    // 히스토리에서 제거
+    const storyId = story.firestoreId || story.id
+    if (storyId) {
+      removeGameFromHistory(storyId)
+    }
+
+    // 현재 초안이 삭제하는 스토리와 같으면 초안도 삭제
+    const draft = loadFromLocalStorage()
+    if (draft && (
+      draft.firestoreGameId === story.firestoreId ||
+      draft.gameTitle === story.title
+    )) {
+      clearLocalStorage()
+      setSavedDraft(null)
+    }
+
     loadSavedStories() // 목록 새로고침
     alert('삭제되었습니다.')
   }
@@ -234,6 +276,17 @@ function SetupWizard() {
       slides: []
     }
     saveToLocalStorage(gameData)
+    
+    // StoryEditor에서 자동 불러오기 팝업을 띄우지 않도록 플래그 설정
+    sessionStorage.setItem('skipLoadPrompt', 'true')
+    
+    // 성공 모달 표시
+    setShowSuccessModal(true)
+  }
+
+  // 성공 모달에서 에디터로 이동
+  const handleGoToEditor = () => {
+    setShowSuccessModal(false)
     navigate('/editor')
   }
 
@@ -342,37 +395,50 @@ function SetupWizard() {
               ) : (
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {savedStories.map((story) => (
-                    <button
+                    <div
                       key={story.id || story.firestoreId}
-                      onClick={() => handleLoadStory(story)}
-                      disabled={loading}
-                      className="w-full p-3 bg-gray-50 hover:bg-gray-100 rounded-lg text-left transition-colors disabled:opacity-50"
+                      className="group relative"
                     >
-                      <div className="flex items-center gap-3">
-                        {story.thumbnail && (
-                          <img
-                            src={story.thumbnail}
-                            alt={story.title}
-                            className="w-12 h-12 object-cover rounded"
-                          />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-gray-800 truncate">
-                            {story.title}
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {story.updatedAt
-                              ? new Date(story.updatedAt).toLocaleString('ko-KR', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })
-                              : '날짜 없음'}
+                      <button
+                        onClick={() => handleLoadStory(story)}
+                        disabled={loading}
+                        className="w-full p-3 bg-gray-50 hover:bg-gray-100 rounded-lg text-left transition-colors disabled:opacity-50"
+                      >
+                        <div className="flex items-center gap-3">
+                          {story.thumbnail && (
+                            <img
+                              src={story.thumbnail}
+                              alt={story.title}
+                              className="w-12 h-12 object-cover rounded"
+                            />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-gray-800 truncate">
+                              {story.title}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {story.updatedAt
+                                ? new Date(story.updatedAt).toLocaleString('ko-KR', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })
+                                : '날짜 없음'}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        onClick={(e) => handleDeleteStory(e, story)}
+                        className="absolute top-2 right-2 p-1.5 bg-red-100 text-red-700 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-200"
+                        title="삭제"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -720,6 +786,35 @@ function SetupWizard() {
           </div>
         </div>
       </div>
+
+      {/* 성공 모달 */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-2xl shadow-2xl p-8 max-w-md mx-4"
+          >
+            <div className="text-center">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">스토리 설정이 저장되었습니다!</h2>
+              <p className="text-gray-600 mb-6">
+                이제 에디터에서 슬라이드를 만들고 스토리를 작성할 수 있습니다.
+              </p>
+              <button
+                onClick={handleGoToEditor}
+                className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold text-base transition-colors"
+              >
+                에디터로 이동하기
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   )
 }
