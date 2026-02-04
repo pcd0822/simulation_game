@@ -36,6 +36,7 @@ function GamePlayer() {
   const [showNicknameModal, setShowNicknameModal] = useState(false)
   const [displayedText, setDisplayedText] = useState('')
   const [isTyping, setIsTyping] = useState(false)
+  const [scoreBoardOpen, setScoreBoardOpen] = useState(true) // 모바일에서 접기/펼치기
   const gameIdRef = useRef(null)
   const typingTimeoutRef = useRef(null)
 
@@ -482,7 +483,6 @@ function GamePlayer() {
                 </button>
               )}
             </>
-          )}
         </div>
       </div>
     )
@@ -589,103 +589,134 @@ function GamePlayer() {
         </div>
       )}
 
-      {/* 좌측 상단 스코어 보드 */}
-      <div className="fixed top-4 left-4 z-30 w-64">
+      {/* 좌측 상단 스코어 보드 (반응형) */}
+      <div className="fixed top-2 left-2 md:top-4 md:left-4 z-30 w-48 md:w-64">
         <motion.div
           initial={{ opacity: 0, x: -50 }}
           animate={{ opacity: 1, x: 0 }}
-          className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border-2 border-white/50 p-4"
+          className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border-2 border-white/50 overflow-hidden"
         >
-          <h3 className="text-lg font-bold text-gray-800 mb-3">스코어</h3>
-          
-          {/* 변수별 게이지바 */}
-          <div className="space-y-3 mb-4">
-            {variables.map((variable) => {
-              const range = getVariableRange(variable.name)
-              const percentage = ((range.current - range.min) / (range.max - range.min)) * 100
-              
-              return (
-                <div key={variable.name} className="space-y-1">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="font-medium text-gray-700">{variable.name}</span>
-                    <span className="font-bold text-indigo-600">{range.current}</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${Math.max(0, Math.min(100, percentage))}%` }}
-                      transition={{ duration: 0.5, ease: 'easeOut' }}
-                      className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
-                    />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          {/* 헤더 (모바일에서 접기/펼치기) */}
+          <button
+            onClick={() => setScoreBoardOpen(!scoreBoardOpen)}
+            className="w-full px-3 py-2 md:px-4 md:py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          >
+            <h3 className="text-sm md:text-lg font-bold text-gray-800">스코어</h3>
+            <svg
+              className={`w-4 h-4 md:w-5 md:h-5 text-gray-600 transition-transform ${
+                scoreBoardOpen ? 'rotate-180' : ''
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
 
-          {/* 퀘스트 보드 */}
-          {quests && quests.some(q => q.enabled) && (
-            <div className="border-t border-gray-300 pt-3 mt-3">
-              <h3 className="text-lg font-bold text-gray-800 mb-3">퀘스트</h3>
-              <div className="space-y-2">
-                {quests
-                  .filter(q => q.enabled)
-                  .map((quest, index) => {
-                    const questId = `quest_${index}`
-                    const status = questStatus[questId]
-                    const progress = getQuestProgress(quest, index)
-                    const isCompleted = status?.completed || progress.completed
-
-                    return (
-                      <div
-                        key={index}
-                        className={`p-2 rounded-lg text-sm ${
-                          isCompleted ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200'
-                        }`}
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className="text-lg mt-0.5">
-                            {isCompleted ? '✓' : '○'}
-                          </span>
-                          <div className="flex-1">
-                            <div
-                              className={`font-medium ${
-                                isCompleted ? 'line-through text-gray-500' : 'text-gray-800'
-                              }`}
-                            >
-                              {quest.type === 'score' 
-                                ? `${quest.targetVariable} ${quest.targetScore}점 달성`
-                                : '목표 장면 도달'}
-                            </div>
-                            {!isCompleted && quest.type === 'score' && (
-                              <div className="text-xs text-gray-600 mt-1">
-                                진행률: {Math.round(progress.progress)}%
-                              </div>
-                            )}
+          {/* 스코어 보드 내용 (모바일에서 접기/펼치기) */}
+          <AnimatePresence>
+            {scoreBoardOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="overflow-hidden"
+              >
+                <div className="px-3 py-2 md:px-4 md:py-3">
+                  {/* 변수별 게이지바 */}
+                  <div className="space-y-2 md:space-y-3 mb-3 md:mb-4">
+                    {variables.map((variable) => {
+                      const range = getVariableRange(variable.name)
+                      const percentage = ((range.current - range.min) / (range.max - range.min)) * 100
+                      
+                      return (
+                        <div key={variable.name} className="space-y-1">
+                          <div className="flex justify-between items-center text-xs md:text-sm">
+                            <span className="font-medium text-gray-700 truncate pr-1">{variable.name}</span>
+                            <span className="font-bold text-indigo-600 whitespace-nowrap">{range.current}</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2 md:h-3 overflow-hidden">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${Math.max(0, Math.min(100, percentage))}%` }}
+                              transition={{ duration: 0.5, ease: 'easeOut' }}
+                              className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+                            />
                           </div>
                         </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* 퀘스트 보드 */}
+                  {quests && quests.some(q => q.enabled) && (
+                    <div className="border-t border-gray-300 pt-2 md:pt-3 mt-2 md:mt-3">
+                      <h3 className="text-sm md:text-lg font-bold text-gray-800 mb-2 md:mb-3">퀘스트</h3>
+                      <div className="space-y-1.5 md:space-y-2">
+                        {quests
+                          .filter(q => q.enabled)
+                          .map((quest, index) => {
+                            const questId = `quest_${index}`
+                            const status = questStatus[questId]
+                            const progress = getQuestProgress(quest, index)
+                            const isCompleted = status?.completed || progress.completed
+
+                            return (
+                              <div
+                                key={index}
+                                className={`p-1.5 md:p-2 rounded-lg text-xs md:text-sm ${
+                                  isCompleted ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200'
+                                }`}
+                              >
+                                <div className="flex items-start gap-1.5 md:gap-2">
+                                  <span className="text-sm md:text-lg mt-0.5 flex-shrink-0">
+                                    {isCompleted ? '✓' : '○'}
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <div
+                                      className={`font-medium ${
+                                        isCompleted ? 'line-through text-gray-500' : 'text-gray-800'
+                                      }`}
+                                    >
+                                      {quest.type === 'score' 
+                                        ? `${quest.targetVariable} ${quest.targetScore}점`
+                                        : '목표 장면'}
+                                    </div>
+                                    {!isCompleted && quest.type === 'score' && (
+                                      <div className="text-xs text-gray-600 mt-0.5">
+                                        {Math.round(progress.progress)}%
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
                       </div>
-                    )
-                  })}
-              </div>
-            </div>
-          )}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       </div>
 
-      {/* 헤더 (반투명) */}
+      {/* 헤더 (반투명, 모바일 반응형) */}
       <div className="relative z-10 bg-black/30 backdrop-blur-sm">
-        <div className="max-w-6xl mx-auto px-4 py-3">
-          <h1 className="text-xl font-bold text-white drop-shadow-lg">{gameTitle}</h1>
+        <div className="max-w-6xl mx-auto px-3 md:px-4 py-2 md:py-3">
+          <h1 className="text-base md:text-xl font-bold text-white drop-shadow-lg truncate">{gameTitle}</h1>
           {studentNickname && (
-            <p className="text-sm text-white/80 drop-shadow mt-1">플레이어: {studentNickname}</p>
+            <p className="text-xs md:text-sm text-white/80 drop-shadow mt-0.5 md:mt-1 truncate">플레이어: {studentNickname}</p>
           )}
         </div>
       </div>
 
-      {/* 게임 화면 - 하단 대화창 형식 */}
+      {/* 게임 화면 - 하단 대화창 형식 (모바일 반응형) */}
       <div className="fixed bottom-0 left-0 right-0 z-20">
-        <div className="max-w-6xl mx-auto px-4 pb-6">
+        <div className="max-w-6xl mx-auto px-2 md:px-4 pb-3 md:pb-6">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentSlideId}
@@ -693,24 +724,24 @@ function GamePlayer() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 100, scale: 0.95 }}
               transition={{ duration: 0.5, ease: 'easeInOut' }}
-              className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border-2 border-white/50 overflow-hidden"
+              className="bg-white/95 backdrop-blur-md rounded-xl md:rounded-2xl shadow-2xl border-2 border-white/50 overflow-hidden"
             >
               {/* 대사/지문 (타이핑 효과) */}
-              <div className="p-6">
-                <div className="text-lg text-gray-800 leading-relaxed mb-6 min-h-[80px]">
+              <div className="p-3 md:p-6">
+                <div className="text-sm md:text-lg text-gray-800 leading-relaxed mb-4 md:mb-6 min-h-[60px] md:min-h-[80px]">
                   {displayedText}
                   {isTyping && (
                     <motion.span
                       animate={{ opacity: [1, 0] }}
                       transition={{ duration: 0.8, repeat: Infinity, repeatType: 'reverse' }}
-                      className="inline-block w-0.5 h-5 bg-indigo-600 ml-1"
+                      className="inline-block w-0.5 h-4 md:h-5 bg-indigo-600 ml-1"
                     />
                   )}
                 </div>
 
                 {/* 선택지 (타이핑 완료 후에만 표시) */}
                 {!isTyping && currentSlide.choices && currentSlide.choices.length > 0 ? (
-                  <div className="space-y-3">
+                  <div className="space-y-2 md:space-y-3">
                     {currentSlide.choices.map((choice, index) => (
                       <motion.button
                         key={choice.id}
@@ -720,15 +751,15 @@ function GamePlayer() {
                         whileHover={{ scale: 1.02, x: 5 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => makeChoice(choice)}
-                        className="w-full p-4 text-left bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 border-2 border-indigo-200 rounded-lg transition-all shadow-sm hover:shadow-md"
+                        className="w-full p-3 md:p-4 text-left bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 border-2 border-indigo-200 rounded-lg transition-all shadow-sm hover:shadow-md"
                       >
-                        <div className="font-medium text-indigo-900 text-base">{choice.text}</div>
+                        <div className="font-medium text-indigo-900 text-sm md:text-base">{choice.text}</div>
                       </motion.button>
                     ))}
                   </div>
                 ) : !isTyping && (
-                  <div className="text-center py-6">
-                    <p className="text-gray-500 text-lg">스토리가 끝났습니다.</p>
+                  <div className="text-center py-4 md:py-6">
+                    <p className="text-gray-500 text-base md:text-lg">스토리가 끝났습니다.</p>
                   </div>
                 )}
               </div>
