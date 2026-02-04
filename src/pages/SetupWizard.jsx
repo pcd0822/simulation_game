@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import useGameStore from '../stores/gameStore'
 import { compressAndConvertToBase64, processMultipleImages } from '../utils/imageUtils'
-import { loadFromLocalStorage, clearLocalStorage, getGameHistory } from '../utils/localStorage'
+import { loadFromLocalStorage, clearLocalStorage, getGameHistory, saveToLocalStorage } from '../utils/localStorage'
 import { getGamesList, loadGameFromFirestore, isFirestoreAvailable } from '../services/firestore'
 
 function SetupWizard() {
@@ -223,6 +223,17 @@ function SetupWizard() {
 
   // 완료 및 에디터로 이동
   const handleComplete = () => {
+    // 게임 데이터를 로컬스토리지에 저장 (퀘스트 포함)
+    const gameData = {
+      gameTitle,
+      protagonistName,
+      synopsis,
+      variables,
+      characterImages,
+      quests: quests || [],
+      slides: []
+    }
+    saveToLocalStorage(gameData)
     navigate('/editor')
   }
 

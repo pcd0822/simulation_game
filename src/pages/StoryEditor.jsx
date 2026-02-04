@@ -120,7 +120,7 @@ function StoryEditor() {
 
   // 게임 데이터 변경 시 자동 저장 (디바운싱)
   useEffect(() => {
-    if (!autoSaveEnabled || slides.length === 0) return
+    if (!autoSaveEnabled) return
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)
