@@ -11,15 +11,17 @@ const useGameStore = create((set, get) => ({
   synopsis: '',
   variables: [], // [{name: "호감도", initial: 50}]
   characterImages: [], // [{id, label, base64}]
+  quests: [], // [{type: "score"|"scene", enabled: boolean, targetVariable?: string, targetScore?: number, targetSlideId?: string}]
   
   // 슬라이드 데이터
-  slides: [], // [{id, text, imageLabel, choices: [{id, text, variableChanges, nextSlideId}]}]
+  slides: [], // [{id, text, imageLabel, choices: [{id, text, variableChanges, nextSlideId}], questSuccessScene?: boolean}]
   currentSlideIndex: 0,
   
   // 플레이어 상태 (게임 플레이 시)
   playerVariables: {},
   currentSlideId: null,
   gameHistory: [],
+  questStatus: {}, // {questId: {completed: boolean, completedAt?: timestamp}}
   
   // 액션: 초기 설정
   setSheetUrl: (url) => set({ sheetUrl: url }),
@@ -83,6 +85,7 @@ const useGameStore = create((set, get) => ({
     synopsis: data.synopsis || '',
     variables: data.variables || [],
     characterImages: data.characterImages || [],
+    quests: data.quests || [],
     slides: data.slides || []
   }),
   
@@ -95,6 +98,7 @@ const useGameStore = create((set, get) => ({
       synopsis: state.synopsis,
       variables: state.variables,
       characterImages: state.characterImages,
+      quests: state.quests || [],
       slides: state.slides
     }
   },
@@ -107,10 +111,19 @@ const useGameStore = create((set, get) => ({
       playerVariables[v.name] = v.initial || 0
     })
     
+    // 퀘스트 상태 초기화
+    const questStatus = {}
+    state.quests?.forEach((quest, index) => {
+      if (quest.enabled) {
+        questStatus[`quest_${index}`] = { completed: false }
+      }
+    })
+    
     set({
       playerVariables,
       currentSlideId: state.slides[0]?.id || null,
-      gameHistory: []
+      gameHistory: [],
+      questStatus
     })
   },
   
@@ -144,6 +157,26 @@ const useGameStore = create((set, get) => ({
     })
   },
   
+  // 액션: 퀘스트 관리
+  setQuests: (quests) => set({ quests }),
+  addQuest: (quest) => set((state) => ({
+    quests: [...state.quests, quest]
+  })),
+  updateQuest: (index, quest) => set((state) => ({
+    quests: state.quests.map((q, i) => i === index ? quest : q)
+  })),
+  removeQuest: (index) => set((state) => ({
+    quests: state.quests.filter((_, i) => i !== index)
+  })),
+  
+  // 액션: 퀘스트 상태 업데이트
+  updateQuestStatus: (questId, status) => set((state) => ({
+    questStatus: {
+      ...state.questStatus,
+      [questId]: status
+    }
+  })),
+  
   // 액션: 리셋
   reset: () => set({
     sheetUrl: '',
@@ -152,11 +185,13 @@ const useGameStore = create((set, get) => ({
     synopsis: '',
     variables: [],
     characterImages: [],
+    quests: [],
     slides: [],
     currentSlideIndex: 0,
     playerVariables: {},
     currentSlideId: null,
-    gameHistory: []
+    gameHistory: [],
+    questStatus: {}
   })
 }))
 

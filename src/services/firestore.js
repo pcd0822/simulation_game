@@ -134,6 +134,70 @@ export async function getGamesList(maxResults = 50) {
 }
 
 /**
+ * 게임 결과를 Firestore에 저장
+ * @param {string} gameId - 게임 ID
+ * @param {Object} resultData - 결과 데이터 (nickname, totalTime, questTimes, playerVariables, completedAt)
+ * @returns {Promise<string>} 결과 문서 ID
+ */
+export async function saveGameResult(gameId, resultData) {
+  if (!db) {
+    throw new Error('Firebase가 초기화되지 않았습니다. .env 파일을 확인하세요.')
+  }
+
+  if (!gameId) {
+    throw new Error('게임 ID가 필요합니다.')
+  }
+
+  try {
+    const resultsRef = collection(db, GAMES_COLLECTION, gameId, 'results')
+    const docRef = await addDoc(resultsRef, {
+      ...resultData,
+      submittedAt: serverTimestamp()
+    })
+    return docRef.id
+  } catch (error) {
+    console.error('결과 저장 오류:', error)
+    throw new Error(`결과 저장 실패: ${error.message}`)
+  }
+}
+
+/**
+ * 게임의 모든 결과 불러오기
+ * @param {string} gameId - 게임 ID
+ * @returns {Promise<Array>} 결과 목록
+ */
+export async function getGameResults(gameId) {
+  if (!db) {
+    throw new Error('Firebase가 초기화되지 않았습니다. .env 파일을 확인하세요.')
+  }
+
+  if (!gameId) {
+    throw new Error('게임 ID가 필요합니다.')
+  }
+
+  try {
+    const resultsRef = collection(db, GAMES_COLLECTION, gameId, 'results')
+    const q = query(resultsRef, orderBy('submittedAt', 'desc'))
+    const querySnapshot = await getDocs(q)
+
+    const results = []
+    querySnapshot.forEach((doc) => {
+      const data = doc.data()
+      results.push({
+        id: doc.id,
+        ...data,
+        submittedAt: data.submittedAt?.toDate?.() || data.submittedAt || new Date()
+      })
+    })
+
+    return results
+  } catch (error) {
+    console.error('결과 불러오기 오류:', error)
+    throw new Error(`결과 불러오기 실패: ${error.message}`)
+  }
+}
+
+/**
  * Firestore 사용 가능 여부 확인
  * @returns {boolean}
  */

@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom'
 import SetupWizard from './pages/SetupWizard'
 import StoryEditor from './pages/StoryEditor'
 import GamePlayer from './pages/GamePlayer'
+import ResultDashboard from './pages/ResultDashboard'
 
 function App() {
   return (
@@ -10,6 +11,7 @@ function App() {
         <Route path="/" element={<SetupWizard />} />
         <Route path="/editor" element={<StoryEditor />} />
         <Route path="/play" element={<GamePlayer />} />
+        <Route path="/results" element={<ResultDashboard />} />
       </Routes>
     </div>
   )

@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import useGameStore from '../stores/gameStore'
 import { loadGameData } from '../services/googleScript'
 import { decodeGameData, loadGameDataFromFile } from '../utils/dataExport'
-import { loadGameFromFirestore, isFirestoreAvailable } from '../services/firestore'
+import { loadGameFromFirestore, isFirestoreAvailable, saveGameResult } from '../services/firestore'
 
 function GamePlayer() {
   const [searchParams] = useSearchParams()
@@ -15,18 +15,116 @@ function GamePlayer() {
     protagonistName,
     characterImages,
     slides,
+    quests,
     playerVariables,
     currentSlideId,
+    questStatus,
     initGamePlay,
     makeChoice,
+    updateQuestStatus,
     loadGameData: loadDataToStore
   } = useGameStore()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [gameStartTime] = useState(Date.now())
+  const [questCompleteTimes, setQuestCompleteTimes] = useState({})
+  const [showResultModal, setShowResultModal] = useState(false)
+  const [studentNickname, setStudentNickname] = useState('')
+  const [submittingResult, setSubmittingResult] = useState(false)
+  const gameIdRef = useRef(null)
 
   const currentSlide = slides.find(s => s.id === currentSlideId)
   const currentImage = characterImages.find(img => img.label === currentSlide?.imageLabel)
+
+  // 퀘스트 완료 체크
+  useEffect(() => {
+    if (!quests || quests.length === 0) return
+
+    quests.forEach((quest, index) => {
+      if (!quest.enabled) return
+      const questId = `quest_${index}`
+      const status = questStatus[questId]
+
+      if (status && status.completed) return // 이미 완료됨
+
+      let completed = false
+
+      if (quest.type === 'score') {
+        // 점수 누적 퀘스트
+        const currentScore = playerVariables[quest.targetVariable] || 0
+        if (currentScore >= (quest.targetScore || 0)) {
+          completed = true
+        }
+      } else if (quest.type === 'scene') {
+        // 장면 퀘스트
+        if (currentSlide?.questSuccessScene || currentSlideId === quest.targetSlideId) {
+          completed = true
+        }
+      }
+
+      if (completed) {
+        const completeTime = Date.now()
+        updateQuestStatus(questId, { completed: true, completedAt: completeTime })
+        setQuestCompleteTimes(prev => ({
+          ...prev,
+          [questId]: completeTime
+        }))
+      }
+    })
+  }, [playerVariables, currentSlideId, currentSlide, quests, questStatus, updateQuestStatus])
+
+  // 모든 퀘스트 완료 여부 확인
+  const allQuestsCompleted = () => {
+    if (!quests || quests.length === 0) return true
+    const enabledQuests = quests.filter(q => q.enabled)
+    if (enabledQuests.length === 0) return true
+
+    return enabledQuests.every((quest, index) => {
+      const questId = `quest_${index}`
+      return questStatus[questId]?.completed === true
+    })
+  }
+
+  // 게임 종료 가능 여부
+  const canEndGame = () => {
+    if (!currentSlide || (currentSlide.choices && currentSlide.choices.length > 0)) {
+      return false // 아직 선택지가 있음
+    }
+    return allQuestsCompleted() // 모든 퀘스트 완료 여부
+  }
+
+  // 뒤로가기 방지 (퀘스트 미완료 시)
+  useEffect(() => {
+    const hasEnabledQuests = quests && quests.some(q => q.enabled)
+    if (!hasEnabledQuests) return
+
+    const checkQuestsCompleted = () => {
+      if (!quests || quests.length === 0) return true
+      const enabledQuests = quests.filter(q => q.enabled)
+      if (enabledQuests.length === 0) return true
+
+      return enabledQuests.every((quest, index) => {
+        const questId = `quest_${index}`
+        return questStatus[questId]?.completed === true
+      })
+    }
+
+    const handlePopState = (e) => {
+      if (!checkQuestsCompleted()) {
+        e.preventDefault()
+        window.history.pushState(null, '', window.location.href)
+        alert('모든 퀘스트를 완료해야 게임을 종료할 수 있습니다.')
+      }
+    }
+
+    window.history.pushState(null, '', window.location.href)
+    window.addEventListener('popstate', handlePopState)
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [quests, questStatus])
 
   // 게임 데이터 불러오기
   useEffect(() => {
@@ -38,6 +136,7 @@ function GamePlayer() {
       // 방법 1: Firestore ID로 불러오기 (최우선)
       if (gameIdParam && isFirestoreAvailable()) {
         try {
+          gameIdRef.current = gameIdParam
           const gameData = await loadGameFromFirestore(gameIdParam)
           if (gameData) {
             loadDataToStore(gameData)
@@ -189,112 +288,208 @@ function GamePlayer() {
     )
   }
 
-  if (!currentSlide) {
+  // 게임 종료 화면
+  if (!currentSlide || (currentSlide.choices && currentSlide.choices.length === 0 && canEndGame())) {
+    const gameEndTime = Date.now()
+    const totalTime = Math.floor((gameEndTime - gameStartTime) / 1000) // 초 단위
+
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 flex items-center justify-center">
-        <div className="bg-white rounded-lg shadow-xl p-8 max-w-md text-center">
-          <h2 className="text-2xl font-bold text-gray-800 mb-4">게임 종료</h2>
-          <p className="text-gray-600 mb-6">스토리가 끝났습니다!</p>
-          <div className="space-y-2">
-            <h3 className="font-semibold">최종 상태:</h3>
-            {Object.entries(playerVariables).map(([name, value]) => (
-              <div key={name} className="text-gray-700">
-                {name}: {value}
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">게임 완료!</h2>
+          
+          {!allQuestsCompleted() && quests && quests.some(q => q.enabled) && (
+            <div className="mb-4 p-3 bg-yellow-100 border-2 border-yellow-400 rounded-lg">
+              <p className="text-yellow-800 font-semibold text-sm">
+                ⚠️ 모든 퀘스트를 완료해야 게임을 종료할 수 있습니다.
+              </p>
+              <p className="text-yellow-700 text-xs mt-2">
+                뒤로가기 버튼을 눌러 퀘스트를 완료하세요.
+              </p>
+            </div>
+          )}
+
+          {allQuestsCompleted() && (
+            <>
+              <div className="space-y-3 mb-6">
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <h3 className="font-semibold text-gray-700 mb-2">최종 상태:</h3>
+                  {Object.entries(playerVariables).map(([name, value]) => (
+                    <div key={name} className="text-gray-700 text-sm">
+                      {name}: <span className="font-bold text-indigo-600">{value}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <h3 className="font-semibold text-gray-700 mb-2">플레이 시간:</h3>
+                  <p className="text-gray-700 text-sm">
+                    {Math.floor(totalTime / 60)}분 {totalTime % 60}초
+                  </p>
+                </div>
               </div>
-            ))}
-          </div>
+
+              {showResultModal ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      닉네임 입력
+                    </label>
+                    <input
+                      type="text"
+                      value={studentNickname}
+                      onChange={(e) => setStudentNickname(e.target.value)}
+                      placeholder="이름 또는 닉네임"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                      maxLength={20}
+                    />
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!studentNickname.trim()) {
+                        alert('닉네임을 입력해주세요.')
+                        return
+                      }
+
+                      setSubmittingResult(true)
+                      try {
+                        const questTimes = {}
+                        quests?.forEach((quest, index) => {
+                          if (quest.enabled) {
+                            const questId = `quest_${index}`
+                            const completeTime = questCompleteTimes[questId]
+                            if (completeTime) {
+                              questTimes[questId] = Math.floor((completeTime - gameStartTime) / 1000)
+                            }
+                          }
+                        })
+
+                        if (gameIdRef.current && isFirestoreAvailable()) {
+                          await saveGameResult(gameIdRef.current, {
+                            nickname: studentNickname.trim(),
+                            totalTime,
+                            questTimes,
+                            playerVariables,
+                            completedAt: new Date().toISOString()
+                          })
+                          alert('결과가 제출되었습니다!')
+                          setShowResultModal(false)
+                        } else {
+                          alert('결과를 저장할 수 없습니다. 게임 ID가 없습니다.')
+                        }
+                      } catch (err) {
+                        console.error('결과 저장 오류:', err)
+                        alert('결과 저장 중 오류가 발생했습니다: ' + err.message)
+                      } finally {
+                        setSubmittingResult(false)
+                      }
+                    }}
+                    disabled={submittingResult}
+                    className="w-full px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-semibold"
+                  >
+                    {submittingResult ? '제출 중...' : '결과 제출하기'}
+                  </button>
+                  <button
+                    onClick={() => setShowResultModal(false)}
+                    className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                  >
+                    취소
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowResultModal(true)}
+                  className="w-full px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold"
+                >
+                  결과 제출하기
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100">
-      {/* 헤더 */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-gray-800">{gameTitle}</h1>
-          <div className="flex gap-4 mt-2">
-            {/* 변수(점수) 표시 숨김 처리됨 */}
-            {/* 
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 relative overflow-hidden">
+      {/* 배경 이미지 - 크게 표시 */}
+      {currentImage && (
+        <div className="fixed inset-0 z-0">
+          <motion.img
+            key={currentImage.id}
+            src={currentImage.base64}
+            alt={currentImage.label}
+            initial={{ opacity: 0, scale: 1.1 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            className="w-full h-full object-cover"
+            style={{ filter: 'brightness(0.7)' }}
+          />
+        </div>
+      )}
+
+      {/* 헤더 (반투명) */}
+      <div className="relative z-10 bg-black/30 backdrop-blur-sm">
+        <div className="max-w-6xl mx-auto px-4 py-3">
+          <h1 className="text-xl font-bold text-white drop-shadow-lg">{gameTitle}</h1>
+          {/* 변수 표시 (옵션) */}
+          {Object.keys(playerVariables).length > 0 && (
             <div className="flex gap-4 mt-2">
               {Object.entries(playerVariables).map(([name, value]) => (
-                <div key={name} className="text-sm">
+                <div key={name} className="text-sm text-white drop-shadow">
                   <span className="font-medium">{name}:</span>{' '}
-                  <span className="text-indigo-600">{value}</span>
+                  <span className="text-yellow-300 font-bold">{value}</span>
                 </div>
               ))}
             </div>
-            */}
-          </div>
+          )}
         </div>
       </div>
 
-      {/* 게임 화면 */}
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentSlide.id}
-            initial={{ opacity: 0, x: 100 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -100 }}
-            className="bg-white rounded-2xl shadow-xl overflow-hidden"
-          >
-            {/* 캐릭터 이미지 */}
-            {currentImage && (
-              <div className="bg-gradient-to-b from-indigo-100 to-purple-100 p-8 flex justify-center">
-                <motion.img
-                  key={currentImage.id}
-                  src={currentImage.base64}
-                  alt={currentImage.label}
-                  initial={{ scale: 0.9 }}
-                  animate={{ scale: 1 }}
-                  className="max-w-xs rounded-lg shadow-lg"
-                />
-              </div>
-            )}
-
-            {/* 대사/지문 */}
-            <div className="p-8">
-              <div className="text-lg text-gray-800 leading-relaxed mb-8">
-                {currentSlide.text}
-              </div>
-
-              {/* 선택지 */}
-              {currentSlide.choices && currentSlide.choices.length > 0 ? (
-                <div className="space-y-3">
-                  {currentSlide.choices.map((choice) => (
-                    <motion.button
-                      key={choice.id}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => makeChoice(choice)}
-                      className="w-full p-4 text-left bg-indigo-50 hover:bg-indigo-100 border-2 border-indigo-200 rounded-lg transition"
-                    >
-                      <div className="font-medium text-indigo-900">{choice.text}</div>
-                      {/* 변수 변화 표시 숨김 */}
-                      {/*
-                      {choice.variableChanges && Object.keys(choice.variableChanges).length > 0 && (
-                        <div className="text-xs text-indigo-600 mt-1">
-                          {Object.entries(choice.variableChanges).map(([varName, change]) => (
-                            <span key={varName} className="mr-2">
-                              {varName}: {change > 0 ? '+' : ''}{change}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      */}
-                    </motion.button>
-                  ))}
+      {/* 게임 화면 - 하단 대화창 형식 */}
+      <div className="fixed bottom-0 left-0 right-0 z-20">
+        <div className="max-w-6xl mx-auto px-4 pb-6">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentSlide.id}
+              initial={{ opacity: 0, y: 100 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 100 }}
+              className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border-2 border-white/50 overflow-hidden"
+            >
+              {/* 대사/지문 */}
+              <div className="p-6">
+                <div className="text-lg text-gray-800 leading-relaxed mb-6 min-h-[80px]">
+                  {currentSlide.text}
                 </div>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-gray-500">스토리가 끝났습니다.</p>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        </AnimatePresence>
+
+                {/* 선택지 */}
+                {currentSlide.choices && currentSlide.choices.length > 0 ? (
+                  <div className="space-y-3">
+                    {currentSlide.choices.map((choice, index) => (
+                      <motion.button
+                        key={choice.id}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        whileHover={{ scale: 1.02, x: 5 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => makeChoice(choice)}
+                        className="w-full p-4 text-left bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 border-2 border-indigo-200 rounded-lg transition-all shadow-sm hover:shadow-md"
+                      >
+                        <div className="font-medium text-indigo-900 text-base">{choice.text}</div>
+                      </motion.button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6">
+                    <p className="text-gray-500 text-lg">스토리가 끝났습니다.</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </div>
     </div>
   )

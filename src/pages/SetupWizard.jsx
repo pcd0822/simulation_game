@@ -14,6 +14,7 @@ function SetupWizard() {
     synopsis,
     variables,
     characterImages,
+    quests,
     setGameTitle,
     setProtagonistName,
     setSynopsis,
@@ -23,6 +24,10 @@ function SetupWizard() {
     addCharacterImage,
     updateCharacterImage,
     removeCharacterImage,
+    setQuests,
+    addQuest,
+    updateQuest,
+    removeQuest,
     loadGameData: loadDataToStore
   } = useGameStore()
 
@@ -206,7 +211,10 @@ function SetupWizard() {
         return
       }
     } else if (step === 3) {
-      // 변수 단계는 완료 버튼에서 최종 검증
+      if (variables.length === 0) {
+        setError('최소 1개 이상의 변수를 추가해주세요.')
+        return
+      }
     }
     
     setError('')
@@ -215,11 +223,22 @@ function SetupWizard() {
 
   // 완료 및 에디터로 이동
   const handleComplete = () => {
-    if (variables.length === 0) {
-      setError('최소 1개 이상의 변수를 추가해주세요.')
-      return
-    }
     navigate('/editor')
+  }
+
+  // 퀘스트 추가
+  const handleAddQuest = () => {
+    addQuest({
+      type: 'score',
+      enabled: false,
+      targetVariable: variables[0]?.name || '',
+      targetScore: 100
+    })
+  }
+
+  // 퀘스트 업데이트
+  const handleUpdateQuest = (index, updates) => {
+    updateQuest(index, { ...quests[index], ...updates })
   }
 
   return (
@@ -359,7 +378,7 @@ function SetupWizard() {
 
               {/* 진행 단계 표시 */}
               <div className="flex items-center justify-between mb-10">
-                {[1, 2, 3].map((s) => (
+                {[1, 2, 3, 4].map((s) => (
                   <div key={s} className="flex items-center flex-1">
                     <div
                       className={`w-16 h-16 rounded-full flex items-center justify-center font-bold text-xl transition-all ${
@@ -370,7 +389,7 @@ function SetupWizard() {
                     >
                       {s}
                     </div>
-                    {s < 3 && (
+                    {s < 4 && (
                       <div
                         className={`flex-1 h-2 mx-4 rounded-full transition-all ${
                           step > s ? 'bg-indigo-600' : 'bg-gray-200'
@@ -549,6 +568,118 @@ function SetupWizard() {
             </motion.div>
           )}
 
+              {/* 단계 4: 퀘스트 설정 */}
+              {step === 4 && (
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                >
+                  <h2 className="text-3xl font-bold mb-6 text-gray-800">4. 퀘스트 설정 (선택사항)</h2>
+                  <p className="text-gray-600 mb-6">
+                    퀘스트를 설정하면 학생들이 퀘스트를 완료해야 게임을 종료할 수 있습니다.
+                  </p>
+
+                  <div className="space-y-4">
+                    {quests.map((quest, index) => (
+                      <div key={index} className="p-4 bg-gray-50 rounded-lg border-2 border-gray-200">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={quest.enabled || false}
+                              onChange={(e) => handleUpdateQuest(index, { enabled: e.target.checked })}
+                              className="w-5 h-5 text-indigo-600"
+                            />
+                            <span className="font-semibold text-lg">퀘스트 {index + 1}</span>
+                          </div>
+                          <button
+                            onClick={() => removeQuest(index)}
+                            className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+                          >
+                            삭제
+                          </button>
+                        </div>
+
+                        {quest.enabled && (
+                          <div className="space-y-4 mt-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                퀘스트 유형
+                              </label>
+                              <select
+                                value={quest.type || 'score'}
+                                onChange={(e) => handleUpdateQuest(index, { type: e.target.value })}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                              >
+                                <option value="score">점수 누적 퀘스트</option>
+                                <option value="scene">장면 퀘스트</option>
+                              </select>
+                            </div>
+
+                            {quest.type === 'score' && (
+                              <>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    목표 변수
+                                  </label>
+                                  <select
+                                    value={quest.targetVariable || ''}
+                                    onChange={(e) => handleUpdateQuest(index, { targetVariable: e.target.value })}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                                  >
+                                    <option value="">변수 선택...</option>
+                                    {variables.map((v) => (
+                                      <option key={v.name} value={v.name}>
+                                        {v.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    목표 점수
+                                  </label>
+                                  <input
+                                    type="number"
+                                    value={quest.targetScore || 100}
+                                    onChange={(e) => handleUpdateQuest(index, { targetScore: parseInt(e.target.value) || 0 })}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                                  />
+                                </div>
+                              </>
+                            )}
+
+                            {quest.type === 'scene' && (
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  목표 장면
+                                </label>
+                                <p className="text-sm text-gray-600 mb-2">
+                                  에디터에서 슬라이드를 편집할 때 "퀘스트 성공 장면"으로 지정할 수 있습니다.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    <button
+                      onClick={handleAddQuest}
+                      className="w-full px-4 py-3 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 font-semibold"
+                    >
+                      + 퀘스트 추가
+                    </button>
+
+                    {quests.length === 0 && (
+                      <p className="text-center text-gray-500 py-4">
+                        퀘스트를 추가하지 않으면 게임을 자유롭게 진행할 수 있습니다.
+                      </p>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+
               {/* 네비게이션 버튼 */}
               <div className="flex justify-between mt-10 pt-6 border-t border-gray-200">
                 <button
@@ -558,7 +689,7 @@ function SetupWizard() {
                 >
                   ← 이전
                 </button>
-                {step < 3 ? (
+                {step < 4 ? (
                   <button
                     onClick={handleNext}
                     className="px-8 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold text-base transition-colors"

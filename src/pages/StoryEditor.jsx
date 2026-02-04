@@ -19,6 +19,7 @@ function StoryEditor() {
     characterImages,
     variables,
     slides,
+    quests,
     setSlides,
     addSlide,
     updateSlide,
@@ -565,6 +566,49 @@ function StoryEditor() {
               >
                 + 슬라이드 추가
               </button>
+
+              {/* 퀘스트 장면 설정 */}
+              {quests && quests.some(q => q.enabled && q.type === 'scene') && (
+                <div className="mt-4 p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
+                  <h4 className="font-semibold text-yellow-900 mb-3">퀘스트 장면 설정</h4>
+                  <p className="text-sm text-yellow-800 mb-3">
+                    아래에서 퀘스트 성공 장면으로 지정할 슬라이드를 선택하세요.
+                  </p>
+                  <div className="space-y-2">
+                    {quests
+                      .filter(q => q.enabled && q.type === 'scene')
+                      .map((quest, questIndex) => {
+                        const actualIndex = quests.findIndex(q => q === quest)
+                        return (
+                          <div key={actualIndex} className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-yellow-900 flex-1">
+                              장면 퀘스트 {actualIndex + 1}:
+                            </label>
+                            <select
+                              value={quest.targetSlideId || ''}
+                              onChange={(e) => {
+                                const updatedQuests = [...quests]
+                                updatedQuests[actualIndex] = {
+                                  ...updatedQuests[actualIndex],
+                                  targetSlideId: e.target.value
+                                }
+                                useGameStore.getState().setQuests(updatedQuests)
+                              }}
+                              className="flex-1 px-3 py-1 text-sm border border-yellow-300 rounded"
+                            >
+                              <option value="">슬라이드 선택...</option>
+                              {slides.map((slide) => (
+                                <option key={slide.id} value={slide.id}>
+                                  슬라이드 {slides.indexOf(slide) + 1}: {slide.text.substring(0, 30)}...
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 현재 슬라이드 편집 */}
@@ -575,6 +619,36 @@ function StoryEditor() {
                 </h3>
 
                 <div className="space-y-4">
+                  {/* 퀘스트 성공 장면 설정 */}
+                  {quests && quests.some(q => q.enabled && q.type === 'scene') && (
+                    <div className="p-3 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={currentSlide.questSuccessScene || false}
+                          onChange={(e) => {
+                            updateSlide(currentSlide.id, { questSuccessScene: e.target.checked })
+                            // 다른 슬라이드의 체크 해제
+                            if (e.target.checked) {
+                              slides.forEach(slide => {
+                                if (slide.id !== currentSlide.id && slide.questSuccessScene) {
+                                  updateSlide(slide.id, { questSuccessScene: false })
+                                }
+                              })
+                            }
+                          }}
+                          className="w-5 h-5 text-yellow-600"
+                        />
+                        <span className="text-sm font-medium text-yellow-900">
+                          이 슬라이드를 퀘스트 성공 장면으로 설정
+                        </span>
+                      </label>
+                      <p className="text-xs text-yellow-700 mt-1 ml-7">
+                        이 슬라이드에 도달하면 장면 퀘스트가 완료됩니다.
+                      </p>
+                    </div>
+                  )}
+
                   {/* 대사/지문 편집 */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -904,6 +978,46 @@ function StoryEditor() {
                       <p className="text-xs text-gray-400">
                         링크를 직접 복사하여 공유하거나, 파일 다운로드를 사용하세요.
                       </p>
+                    </div>
+                  )}
+
+                  {/* 결과 대시보드 링크 */}
+                  {firestoreGameId && isFirestoreAvailable() && (
+                    <div className="border-t pt-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        게임 결과 대시보드
+                      </label>
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={`${window.location.origin}/results?id=${firestoreGameId}`}
+                            readOnly
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded text-xs"
+                          />
+                          <button
+                            onClick={() => {
+                              const dashboardUrl = `${window.location.origin}/results?id=${firestoreGameId}`
+                              navigator.clipboard.writeText(dashboardUrl)
+                              alert('대시보드 링크가 복사되었습니다!')
+                            }}
+                            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 whitespace-nowrap"
+                          >
+                            복사
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => {
+                            window.open(`/results?id=${firestoreGameId}`, '_blank')
+                          }}
+                          className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                        >
+                          대시보드 열기
+                        </button>
+                        <p className="text-xs text-gray-500">
+                          학생들의 게임 결과를 확인할 수 있는 대시보드입니다.
+                        </p>
+                      </div>
                     </div>
                   )}
 
