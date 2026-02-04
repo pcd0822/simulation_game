@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import useGameStore from '../stores/gameStore'
 import { compressAndConvertToBase64, processMultipleImages } from '../utils/imageUtils'
 import { validateSheetUrl, normalizeSheetUrl, loadGameData } from '../services/googleScript'
-import { loadFromLocalStorage } from '../utils/localStorage'
+import { loadFromLocalStorage, clearLocalStorage, getGameHistory } from '../utils/localStorage'
 
 function SetupWizard() {
   const navigate = useNavigate()
@@ -34,21 +34,38 @@ function SetupWizard() {
   const [newVariable, setNewVariable] = useState({ name: '', initial: 0 })
   const [imageFiles, setImageFiles] = useState([])
   const [processingImages, setProcessingImages] = useState(false)
+  const [savedDraft, setSavedDraft] = useState(null)
+  const [savedHistory, setSavedHistory] = useState([])
 
-  // 페이지 로드 시 로컬스토리지에서 데이터 불러오기
+  // 홈 진입 시: 자동 불러오기 ❌ / 저장된 초안/히스토리만 표시 ✅
   useEffect(() => {
-    const savedData = loadFromLocalStorage()
-    if (savedData) {
-      const shouldLoad = window.confirm(
-        `이전에 저장된 게임 데이터를 찾았습니다.\n불러오시겠습니까?`
-      )
-      if (shouldLoad) {
-        loadDataToStore(savedData)
-        // 에디터로 바로 이동
-        navigate('/editor')
-      }
+    setSavedDraft(loadFromLocalStorage())
+    setSavedHistory(getGameHistory())
+  }, [])
+
+  const handleStartNewStory = () => {
+    // 새 스토리 시작: 상태 초기화 후 Setup Wizard에서 계속 진행
+    useGameStore.getState().reset()
+    setStep(1)
+    setError('')
+  }
+
+  const handleLoadDraft = () => {
+    const draft = loadFromLocalStorage()
+    if (!draft) {
+      alert('저장된 초안이 없습니다.')
+      return
     }
-  }, [loadDataToStore, navigate])
+    loadDataToStore(draft)
+    navigate('/editor')
+  }
+
+  const handleDeleteDraft = () => {
+    if (!window.confirm('저장된 초안을 삭제할까요?')) return
+    clearLocalStorage()
+    setSavedDraft(null)
+    alert('삭제되었습니다.')
+  }
 
   // 시트 URL에서 데이터 불러오기
   const handleLoadFromSheet = async () => {
@@ -168,6 +185,48 @@ function SetupWizard() {
             교실용 인터랙티브 스토리 게임 메이커
           </h1>
           <p className="text-gray-600 mb-8">게임을 만들기 위한 초기 설정을 진행하세요</p>
+
+          {/* 빠른 시작 */}
+          <div className="mb-8 p-4 rounded-xl border bg-gray-50">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <div className="text-sm font-semibold text-gray-800">빠른 시작</div>
+                <div className="text-xs text-gray-600 mt-1">
+                  홈에서는 저장된 스토리를 자동으로 불러오지 않습니다. 아래에서 선택해 주세요.
+                </div>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={handleStartNewStory}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                >
+                  + 새로운 스토리 만들기
+                </button>
+                <button
+                  onClick={handleLoadDraft}
+                  disabled={!savedDraft}
+                  className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 disabled:opacity-50"
+                >
+                  저장된 초안 불러오기
+                </button>
+                <button
+                  onClick={handleDeleteDraft}
+                  disabled={!savedDraft}
+                  className="px-4 py-2 bg-red-50 border border-red-200 text-red-700 rounded-lg hover:bg-red-100 disabled:opacity-50"
+                >
+                  초안 삭제
+                </button>
+              </div>
+            </div>
+
+            {savedDraft && (
+              <div className="mt-3 text-xs text-gray-600">
+                <span className="font-medium">초안:</span>{' '}
+                {savedDraft.gameTitle || '제목 없음'}{' '}
+                {savedDraft.savedAt ? `· 저장: ${new Date(savedDraft.savedAt).toLocaleString('ko-KR')}` : ''}
+              </div>
+            )}
+          </div>
 
           {/* 진행 단계 표시 */}
           <div className="flex items-center justify-between mb-8">

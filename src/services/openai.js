@@ -23,8 +23,16 @@ export async function generateStorySlides(storyText, imageLabels = [], variables
     ? imageLabels.join(', ')
     : '기본 표정'
 
-  const systemPrompt = `당신은 인터랙티브 스토리 게임 제작을 도와주는 AI 어시스턴트입니다.
-사용자가 제공한 스토리를 장면(Scene/Slide) 단위로 나누고, 각 장면에 적절한 선택지를 생성해야 합니다.
+  const systemPrompt = `당신은 교실용 인터랙티브 스토리 게임 제작을 도와주는 AI 어시스턴트입니다.
+사용자가 제공한 스토리를 장면(Scene/Slide) 단위로 나누고, 각 장면에 적절한 선택지(플레이어의 결정)를 생성합니다.
+
+중요: 스토리는 재미 요소를 위해 "기승전결"이 뚜렷해야 합니다.
+반드시 아래 5단계 구조가 드러나도록 구성하세요:
+- 발단(도입/세계관/인물/목표 제시)
+- 전개(갈등의 씨앗/단서/관계 변화)
+- 위기(가장 큰 문제/실패/위험 상승)
+- 절정(결정적 선택/대결/반전/클라이맥스)
+- 결말(결과/정리/여운)
 
 사용 가능한 이미지 라벨: ${imageLabelList}
 게임 변수: ${variableNames}
@@ -33,6 +41,7 @@ export async function generateStorySlides(storyText, imageLabels = [], variables
 각 슬라이드는 다음 형식을 따라야 합니다:
 {
   "id": "unique_id",
+  "phase": "발단|전개|위기|절정|결말",
   "text": "장면의 대사/지문",
   "imageLabel": "이미지 라벨 (사용 가능한 라벨 중 하나)",
   "choices": [
@@ -49,12 +58,15 @@ export async function generateStorySlides(storyText, imageLabels = [], variables
 
 중요: 응답은 반드시 JSON 배열로 시작해야 합니다. 예: [{"id": "slide_1", ...}]`
 
-  const userPrompt = `다음 스토리를 슬라이드 단위로 나누고 각 슬라이드에 선택지를 추가해주세요:
+  const userPrompt = `다음 스토리를 슬라이드 단위로 나누고 각 슬라이드에 선택지를 추가해주세요.
+이번 생성에서는 "발단-전개-위기-절정-결말" 5단계가 명확히 드러나야 합니다.
 
 ${storyText}
 
 요구사항:
-1. 스토리를 자연스러운 장면 단위로 나누기 (최소 3개 이상의 슬라이드)
+1. 기본은 5개의 슬라이드로 구성 (발단, 전개, 위기, 절정, 결말을 각각 1장면씩)
+2. 각 슬라이드에 반드시 "phase" 필드를 포함 (발단|전개|위기|절정|결말 중 하나)
+3. 각 슬라이드의 text는 맨 앞에 단계가 드러나도록 접두어를 붙이기 (예: "【발단】 ...")
 2. 각 장면의 분위기에 맞는 이미지 라벨 선택 (${imageLabelList} 중에서)
 3. 각 슬라이드마다 2-3개의 선택지 제공
 4. 선택지마다 변수 변화 로직 포함 (${variableNames} 중에서 선택)
@@ -186,6 +198,27 @@ ${storyText}
         return choice
       })
     }))
+
+    // 기승전결(발단/전개/위기/절정/결말) 단계 보정: 모델이 누락해도 구조가 드러나도록 강제
+    const phases = ['발단', '전개', '위기', '절정', '결말']
+    slides = slides.map((slide, index) => {
+      const phase = slide.phase || phases[index] || (index === slides.length - 1 ? '결말' : '전개')
+      const text = (slide.text || '').trim()
+      const prefixedText = text.startsWith('【') ? text : `【${phase}】 ${text}`
+      return {
+        ...slide,
+        phase,
+        text: prefixedText
+      }
+    })
+
+    // 마지막 슬라이드는 게임 종료: 선택지 제거(요구사항 강제)
+    if (slides.length > 0) {
+      slides[slides.length - 1] = {
+        ...slides[slides.length - 1],
+        choices: []
+      }
+    }
 
     return slides
   } catch (error) {

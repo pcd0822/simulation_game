@@ -45,6 +45,15 @@ function StoryEditor() {
   const fileInputRef = useRef(null)
   const [firestoreGameId, setFirestoreGameId] = useState(null)
 
+  const handleNewStory = () => {
+    if (!window.confirm('새로운 스토리를 만들까요? (현재 편집 내용은 저장하지 않으면 사라질 수 있어요)')) return
+    useGameStore.getState().reset()
+    setFirestoreGameId(null)
+    setShareUrl('')
+    setError('')
+    navigate('/')
+  }
+
   // ... (공유 링크 자동 생성 useEffect 유지) ...
   // 공유 링크 자동 생성 (게임 데이터가 변경될 때마다)
   useEffect(() => {
@@ -444,6 +453,13 @@ function StoryEditor() {
               className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 flex items-center gap-2"
             >
               <span>📚 내 스토리</span>
+            </button>
+            <button
+              onClick={handleNewStory}
+              className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100"
+              title="새로운 스토리 만들기"
+            >
+              + 새 스토리
             </button>
             <button
               onClick={() => setShowShareModal(true)}
