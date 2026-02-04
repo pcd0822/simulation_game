@@ -3,19 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import useGameStore from '../stores/gameStore'
 import { compressAndConvertToBase64, processMultipleImages } from '../utils/imageUtils'
-import { validateSheetUrl, normalizeSheetUrl, loadGameData } from '../services/googleScript'
 import { loadFromLocalStorage, clearLocalStorage, getGameHistory } from '../utils/localStorage'
+import { getGamesList, loadGameFromFirestore, isFirestoreAvailable } from '../services/firestore'
 
 function SetupWizard() {
   const navigate = useNavigate()
   const {
-    sheetUrl,
     gameTitle,
     protagonistName,
     synopsis,
     variables,
     characterImages,
-    setSheetUrl,
     setGameTitle,
     setProtagonistName,
     setSynopsis,
@@ -35,13 +33,64 @@ function SetupWizard() {
   const [imageFiles, setImageFiles] = useState([])
   const [processingImages, setProcessingImages] = useState(false)
   const [savedDraft, setSavedDraft] = useState(null)
-  const [savedHistory, setSavedHistory] = useState([])
+  const [savedStories, setSavedStories] = useState([])
+  const [loadingStories, setLoadingStories] = useState(false)
 
-  // 홈 진입 시: 자동 불러오기 ❌ / 저장된 초안/히스토리만 표시 ✅
+  // 홈 진입 시: 저장된 초안 및 스토리 목록 불러오기
   useEffect(() => {
     setSavedDraft(loadFromLocalStorage())
-    setSavedHistory(getGameHistory())
+    loadSavedStories()
   }, [])
+
+  // 저장된 스토리 목록 불러오기 (Firestore + 로컬스토리지)
+  const loadSavedStories = async () => {
+    setLoadingStories(true)
+    try {
+      const allStories = []
+      
+      // 로컬스토리지 히스토리
+      const localHistory = getGameHistory()
+      localHistory.forEach(game => {
+        allStories.push({
+          ...game,
+          source: 'local'
+        })
+      })
+
+      // Firestore 목록
+      if (isFirestoreAvailable()) {
+        try {
+          const firestoreGames = await getGamesList(50)
+          firestoreGames.forEach(game => {
+            // 중복 제거 (firestoreId가 같으면 로컬 것을 덮어씀)
+            const existingIndex = allStories.findIndex(s => 
+              s.firestoreId === game.firestoreId
+            )
+            if (existingIndex >= 0) {
+              allStories[existingIndex] = { ...allStories[existingIndex], ...game, source: 'firestore' }
+            } else {
+              allStories.push({ ...game, source: 'firestore' })
+            }
+          })
+        } catch (err) {
+          console.error('Firestore 목록 불러오기 실패:', err)
+        }
+      }
+
+      // 최신순 정렬
+      allStories.sort((a, b) => {
+        const dateA = new Date(a.updatedAt || 0)
+        const dateB = new Date(b.updatedAt || 0)
+        return dateB - dateA
+      })
+
+      setSavedStories(allStories)
+    } catch (err) {
+      console.error('스토리 목록 불러오기 오류:', err)
+    } finally {
+      setLoadingStories(false)
+    }
+  }
 
   const handleStartNewStory = () => {
     // 새 스토리 시작: 상태 초기화 후 Setup Wizard에서 계속 진행
@@ -64,39 +113,43 @@ function SetupWizard() {
     if (!window.confirm('저장된 초안을 삭제할까요?')) return
     clearLocalStorage()
     setSavedDraft(null)
+    loadSavedStories() // 목록 새로고침
     alert('삭제되었습니다.')
   }
 
-  // 시트 URL에서 데이터 불러오기
-  const handleLoadFromSheet = async () => {
-    if (!sheetUrl) {
-      setError('시트 URL을 입력해주세요.')
-      return
-    }
-
-    if (!validateSheetUrl(sheetUrl)) {
-      setError('올바른 Google Sheets URL을 입력해주세요.')
-      return
-    }
-
+  // 저장된 스토리 불러오기
+  const handleLoadStory = async (story) => {
     setLoading(true)
     setError('')
 
     try {
-      const normalizedUrl = normalizeSheetUrl(sheetUrl)
-      const data = await loadGameData(normalizedUrl)
-      
-      if (data) {
-        loadDataToStore({ ...data, sheetUrl: normalizedUrl })
-        setError('')
-        alert('데이터를 성공적으로 불러왔습니다!')
-        // 에디터로 이동
+      let gameData = null
+
+      // Firestore에서 불러오기
+      if (story.firestoreId && isFirestoreAvailable()) {
+        try {
+          gameData = await loadGameFromFirestore(story.firestoreId)
+        } catch (err) {
+          console.error('Firestore 불러오기 실패:', err)
+        }
+      }
+
+      // Firestore 실패 시 로컬스토리지에서 불러오기
+      if (!gameData) {
+        const localData = loadFromLocalStorage()
+        if (localData && (localData.gameTitle === story.title || localData.firestoreGameId === story.firestoreId)) {
+          gameData = localData
+        }
+      }
+
+      if (gameData) {
+        loadDataToStore(gameData)
         navigate('/editor')
       } else {
-        setError('시트에서 데이터를 찾을 수 없습니다. 새로 만들기로 진행하세요.')
+        setError('게임 데이터를 찾을 수 없습니다.')
       }
     } catch (err) {
-      setError(err.message || '데이터 불러오기 실패')
+      setError(err.message || '게임 불러오기 실패')
     } finally {
       setLoading(false)
     }
@@ -143,21 +196,17 @@ function SetupWizard() {
   // 다음 단계로
   const handleNext = () => {
     if (step === 1) {
-      if (!sheetUrl || !validateSheetUrl(sheetUrl)) {
-        setError('올바른 시트 URL을 입력해주세요.')
-        return
-      }
-      setSheetUrl(normalizeSheetUrl(sheetUrl))
-    } else if (step === 2) {
       if (!gameTitle || !protagonistName) {
         setError('게임 제목과 주인공 이름을 입력해주세요.')
         return
       }
-    } else if (step === 3) {
+    } else if (step === 2) {
       if (characterImages.length === 0) {
         setError('최소 1개 이상의 캐릭터 이미지를 업로드해주세요.')
         return
       }
+    } else if (step === 3) {
+      // 변수 단계는 완료 버튼에서 최종 검증
     }
     
     setError('')
@@ -174,131 +223,177 @@ function SetupWizard() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
+      <div className="max-w-6xl mx-auto">
+        {/* 헤더 */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-2xl shadow-xl p-8"
+          className="bg-white rounded-2xl shadow-xl p-8 mb-6"
         >
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">
+          <h1 className="text-4xl font-bold text-gray-800 mb-2">
             교실용 인터랙티브 스토리 게임 메이커
           </h1>
-          <p className="text-gray-600 mb-8">게임을 만들기 위한 초기 설정을 진행하세요</p>
+          <p className="text-gray-600 text-lg">게임을 만들기 위한 초기 설정을 진행하세요</p>
+        </motion.div>
 
-          {/* 빠른 시작 */}
-          <div className="mb-8 p-4 rounded-xl border bg-gray-50">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div>
-                <div className="text-sm font-semibold text-gray-800">빠른 시작</div>
-                <div className="text-xs text-gray-600 mt-1">
-                  홈에서는 저장된 스토리를 자동으로 불러오지 않습니다. 아래에서 선택해 주세요.
-                </div>
-              </div>
-              <div className="flex gap-2 flex-wrap">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* 왼쪽: 빠른 시작 및 저장된 스토리 목록 */}
+          <div className="lg:col-span-1 space-y-6">
+            {/* 빠른 시작 */}
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="bg-white rounded-2xl shadow-xl p-6"
+            >
+              <h2 className="text-xl font-bold text-gray-800 mb-4">빠른 시작</h2>
+              <div className="space-y-3">
                 <button
                   onClick={handleStartNewStory}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                  className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold text-base transition-colors"
                 >
                   + 새로운 스토리 만들기
                 </button>
                 <button
                   onClick={handleLoadDraft}
                   disabled={!savedDraft}
-                  className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 disabled:opacity-50"
+                  className="w-full px-6 py-3 bg-white border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-base transition-colors"
                 >
                   저장된 초안 불러오기
                 </button>
                 <button
                   onClick={handleDeleteDraft}
                   disabled={!savedDraft}
-                  className="px-4 py-2 bg-red-50 border border-red-200 text-red-700 rounded-lg hover:bg-red-100 disabled:opacity-50"
+                  className="w-full px-6 py-3 bg-red-50 border-2 border-red-200 text-red-700 rounded-lg hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-base transition-colors"
                 >
                   초안 삭제
                 </button>
               </div>
-            </div>
 
-            {savedDraft && (
-              <div className="mt-3 text-xs text-gray-600">
-                <span className="font-medium">초안:</span>{' '}
-                {savedDraft.gameTitle || '제목 없음'}{' '}
-                {savedDraft.savedAt ? `· 저장: ${new Date(savedDraft.savedAt).toLocaleString('ko-KR')}` : ''}
-              </div>
-            )}
-          </div>
-
-          {/* 진행 단계 표시 */}
-          <div className="flex items-center justify-between mb-8">
-            {[1, 2, 3, 4].map((s) => (
-              <div key={s} className="flex items-center flex-1">
-                <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-                    step >= s
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-gray-200 text-gray-600'
-                  }`}
-                >
-                  {s}
+              {savedDraft && (
+                <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                  <div className="text-sm font-medium text-gray-800">현재 초안</div>
+                  <div className="text-sm text-gray-600 mt-1">
+                    {savedDraft.gameTitle || '제목 없음'}
+                  </div>
+                  {savedDraft.savedAt && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      저장: {new Date(savedDraft.savedAt).toLocaleString('ko-KR')}
+                    </div>
+                  )}
                 </div>
-                {s < 4 && (
-                  <div
-                    className={`flex-1 h-1 mx-2 ${
-                      step > s ? 'bg-indigo-600' : 'bg-gray-200'
-                    }`}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
+              )}
+            </motion.div>
 
-          {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-              {error}
-            </div>
-          )}
-
-          {/* 단계 1: 시트 연동 */}
-          {step === 1 && (
+            {/* 저장된 스토리 목록 */}
             <motion.div
-              initial={{ opacity: 0, x: 20 }}
+              initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.1 }}
+              className="bg-white rounded-2xl shadow-xl p-6"
             >
-              <h2 className="text-2xl font-semibold mb-4">1. Google 시트 연동</h2>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Google 시트 공유 링크 (편집 권한 포함)
-                  </label>
-                  <input
-                    type="text"
-                    value={sheetUrl}
-                    onChange={(e) => setSheetUrl(e.target.value)}
-                    placeholder="https://docs.google.com/spreadsheets/d/..."
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                  <p className="mt-2 text-sm text-gray-500">
-                    시트를 공유 설정에서 "링크가 있는 모든 사용자"가 편집할 수 있도록 설정해주세요.
-                  </p>
-                </div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-gray-800">내 스토리</h2>
                 <button
-                  onClick={handleLoadFromSheet}
-                  disabled={loading}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50"
+                  onClick={loadSavedStories}
+                  disabled={loadingStories}
+                  className="text-sm text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
                 >
-                  {loading ? '불러오는 중...' : '기존 데이터 불러오기'}
+                  {loadingStories ? '새로고침 중...' : '🔄 새로고침'}
                 </button>
               </div>
+              
+              {loadingStories ? (
+                <div className="text-center py-8 text-gray-500">불러오는 중...</div>
+              ) : savedStories.length === 0 ? (
+                <div className="text-center py-8 text-gray-500 text-sm">
+                  저장된 스토리가 없습니다
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {savedStories.map((story) => (
+                    <button
+                      key={story.id || story.firestoreId}
+                      onClick={() => handleLoadStory(story)}
+                      disabled={loading}
+                      className="w-full p-3 bg-gray-50 hover:bg-gray-100 rounded-lg text-left transition-colors disabled:opacity-50"
+                    >
+                      <div className="flex items-center gap-3">
+                        {story.thumbnail && (
+                          <img
+                            src={story.thumbnail}
+                            alt={story.title}
+                            className="w-12 h-12 object-cover rounded"
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-gray-800 truncate">
+                            {story.title}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {story.updatedAt
+                              ? new Date(story.updatedAt).toLocaleString('ko-KR', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })
+                              : '날짜 없음'}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </motion.div>
-          )}
+          </div>
 
-          {/* 단계 2: 메타 데이터 */}
-          {step === 2 && (
+          {/* 오른쪽: 설정 워크플로우 */}
+          <div className="lg:col-span-2">
             <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white rounded-2xl shadow-xl p-8"
             >
-              <h2 className="text-2xl font-semibold mb-4">2. 게임 기본 정보</h2>
+
+              {/* 진행 단계 표시 */}
+              <div className="flex items-center justify-between mb-10">
+                {[1, 2, 3].map((s) => (
+                  <div key={s} className="flex items-center flex-1">
+                    <div
+                      className={`w-16 h-16 rounded-full flex items-center justify-center font-bold text-xl transition-all ${
+                        step >= s
+                          ? 'bg-indigo-600 text-white shadow-lg scale-110'
+                          : 'bg-gray-200 text-gray-600'
+                      }`}
+                    >
+                      {s}
+                    </div>
+                    {s < 3 && (
+                      <div
+                        className={`flex-1 h-2 mx-4 rounded-full transition-all ${
+                          step > s ? 'bg-indigo-600' : 'bg-gray-200'
+                        }`}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {error && (
+                <div className="mb-6 p-4 bg-red-100 border-2 border-red-400 text-red-700 rounded-lg">
+                  {error}
+                </div>
+              )}
+
+              {/* 단계 1: 메타 데이터 */}
+              {step === 1 && (
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                >
+                  <h2 className="text-3xl font-bold mb-6 text-gray-800">1. 게임 기본 정보</h2>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -340,13 +435,13 @@ function SetupWizard() {
             </motion.div>
           )}
 
-          {/* 단계 3: 이미지 업로드 */}
-          {step === 3 && (
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-            >
-              <h2 className="text-2xl font-semibold mb-4">3. 캐릭터 이미지 업로드</h2>
+              {/* 단계 2: 이미지 업로드 */}
+              {step === 2 && (
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                >
+                  <h2 className="text-3xl font-bold mb-6 text-gray-800">2. 캐릭터 이미지 업로드</h2>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -395,13 +490,13 @@ function SetupWizard() {
             </motion.div>
           )}
 
-          {/* 단계 4: 변수 설정 */}
-          {step === 4 && (
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-            >
-              <h2 className="text-2xl font-semibold mb-4">4. 게임 변수 설정</h2>
+              {/* 단계 3: 변수 설정 */}
+              {step === 3 && (
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                >
+                  <h2 className="text-3xl font-bold mb-6 text-gray-800">3. 게임 변수 설정</h2>
               <div className="space-y-4">
                 <div className="flex gap-2">
                   <input
@@ -454,32 +549,34 @@ function SetupWizard() {
             </motion.div>
           )}
 
-          {/* 네비게이션 버튼 */}
-          <div className="flex justify-between mt-8">
-            <button
-              onClick={() => setStep(Math.max(1, step - 1))}
-              disabled={step === 1}
-              className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              이전
-            </button>
-            {step < 4 ? (
-              <button
-                onClick={handleNext}
-                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-              >
-                다음
-              </button>
-            ) : (
-              <button
-                onClick={handleComplete}
-                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-              >
-                완료 및 에디터로 이동
-              </button>
-            )}
+              {/* 네비게이션 버튼 */}
+              <div className="flex justify-between mt-10 pt-6 border-t border-gray-200">
+                <button
+                  onClick={() => setStep(Math.max(1, step - 1))}
+                  disabled={step === 1}
+                  className="px-8 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-base transition-colors"
+                >
+                  ← 이전
+                </button>
+                {step < 3 ? (
+                  <button
+                    onClick={handleNext}
+                    className="px-8 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold text-base transition-colors"
+                  >
+                    다음 →
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleComplete}
+                    className="px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold text-base transition-colors"
+                  >
+                    완료 및 에디터로 이동 ✓
+                  </button>
+                )}
+              </div>
+            </motion.div>
           </div>
-        </motion.div>
+        </div>
       </div>
     </div>
   )

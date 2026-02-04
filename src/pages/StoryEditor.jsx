@@ -243,8 +243,8 @@ function StoryEditor() {
 
   // 게임 저장
   const handleSave = async (silent = false) => {
-    if (!sheetUrl && !silent) {
-      setError('시트 URL이 설정되지 않았습니다. 로컬 저장은 계속됩니다.')
+    if (!isFirestoreAvailable() && !silent) {
+      setError('Firestore가 설정되지 않았습니다. 로컬 저장은 계속됩니다.')
     }
 
     if (slides.length === 0) {

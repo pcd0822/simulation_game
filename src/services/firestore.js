@@ -7,7 +7,11 @@ import {
   doc,
   setDoc,
   getDoc,
+  getDocs,
   addDoc,
+  query,
+  orderBy,
+  limit,
   serverTimestamp,
   Timestamp
 } from 'firebase/firestore'
@@ -87,6 +91,45 @@ export async function loadGameFromFirestore(gameId) {
   } catch (error) {
     console.error('Firestore 불러오기 오류:', error)
     throw new Error(`게임 불러오기 실패: ${error.message}`)
+  }
+}
+
+/**
+ * Firestore에서 게임 목록 불러오기 (최신순)
+ * @param {number} maxResults - 최대 결과 수 (기본값: 50)
+ * @returns {Promise<Array>} 게임 목록 (id, title, thumbnail, updatedAt 포함)
+ */
+export async function getGamesList(maxResults = 50) {
+  if (!db) {
+    throw new Error('Firebase가 초기화되지 않았습니다. .env 파일을 확인하세요.')
+  }
+
+  try {
+    const gamesRef = collection(db, GAMES_COLLECTION)
+    const q = query(
+      gamesRef,
+      orderBy('updatedAt', 'desc'),
+      limit(maxResults)
+    )
+    const querySnapshot = await getDocs(q)
+
+    const games = []
+    querySnapshot.forEach((doc) => {
+      const data = doc.data()
+      games.push({
+        id: doc.id,
+        firestoreId: doc.id,
+        title: data.gameTitle || '제목 없음',
+        thumbnail: data.characterImages?.[0]?.base64 || null,
+        updatedAt: data.updatedAt?.toDate?.() || data.updatedAt || new Date(),
+        createdAt: data.createdAt?.toDate?.() || data.createdAt || new Date()
+      })
+    })
+
+    return games
+  } catch (error) {
+    console.error('Firestore 목록 조회 오류:', error)
+    throw new Error(`게임 목록 불러오기 실패: ${error.message}`)
   }
 }
 
