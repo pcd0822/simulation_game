@@ -37,6 +37,18 @@ service cloud.firestore {
       
       // 삭제: 누구나 삭제 가능
       allow delete: if true;
+      
+      // 게임 결과 서브컬렉션
+      match /results/{resultId} {
+        // 읽기: 누구나 읽을 수 있음 (결과 대시보드 공개)
+        allow read: if true;
+        
+        // 쓰기: 누구나 쓸 수 있음 (학생들이 결과 제출)
+        allow write: if true;
+        
+        // 삭제: 누구나 삭제 가능
+        allow delete: if true;
+      }
     }
   }
 }

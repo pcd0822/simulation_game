@@ -328,28 +328,67 @@ function GamePlayer() {
   }
 
   // 게임 종료 화면
-  if (!currentSlide || (currentSlide.choices && currentSlide.choices.length === 0 && canEndGame())) {
+  // 스토리가 끝났지만 퀘스트가 완료되지 않은 경우
+  if (!currentSlide || (currentSlide.choices && currentSlide.choices.length === 0)) {
     const gameEndTime = Date.now()
     const totalTime = Math.floor((gameEndTime - gameStartTime) / 1000) // 초 단위
+    const hasIncompleteQuests = !allQuestsCompleted() && quests && quests.some(q => q.enabled)
 
+    // 스토리는 끝났지만 퀘스트가 완료되지 않은 경우
+    if (hasIncompleteQuests) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full">
+            <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">스토리 완료</h2>
+            
+            <div className="mb-6 p-4 bg-yellow-50 border-2 border-yellow-400 rounded-lg">
+              <p className="text-yellow-800 font-semibold text-base mb-2">
+                ⚠️ 아직 완료하지 못한 퀘스트가 있습니다
+              </p>
+              <p className="text-yellow-700 text-sm">
+                모든 퀘스트를 완료해야 게임을 종료할 수 있습니다.
+              </p>
+            </div>
+
+            <div className="space-y-3 mb-6">
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <h3 className="font-semibold text-gray-700 mb-2">현재 상태:</h3>
+                {Object.entries(playerVariables).map(([name, value]) => (
+                  <div key={name} className="text-gray-700 text-sm">
+                    {name}: <span className="font-bold text-indigo-600">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  // 게임을 처음부터 다시 시작
+                  initGamePlay()
+                  setDisplayedText('')
+                  setIsTyping(false)
+                }}
+                className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold text-base transition-colors"
+              >
+                🔄 처음으로 돌아가기
+              </button>
+              <p className="text-xs text-gray-500 text-center">
+                처음부터 다시 시작하여 퀘스트를 완료할 수 있습니다.
+              </p>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    // 모든 퀘스트가 완료된 경우 (기존 로직)
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full">
           <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">게임 완료!</h2>
-          
-          {!allQuestsCompleted() && quests && quests.some(q => q.enabled) && (
-            <div className="mb-4 p-3 bg-yellow-100 border-2 border-yellow-400 rounded-lg">
-              <p className="text-yellow-800 font-semibold text-sm">
-                ⚠️ 모든 퀘스트를 완료해야 게임을 종료할 수 있습니다.
-              </p>
-              <p className="text-yellow-700 text-xs mt-2">
-                뒤로가기 버튼을 눌러 퀘스트를 완료하세요.
-              </p>
-            </div>
-          )}
 
-          {allQuestsCompleted() && (
-            <>
+          <>
               <div className="space-y-3 mb-6">
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <h3 className="font-semibold text-gray-700 mb-2">최종 상태:</h3>
