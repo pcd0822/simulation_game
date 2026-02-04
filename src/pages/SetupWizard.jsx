@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import useGameStore from '../stores/gameStore'
 import { compressAndConvertToBase64, processMultipleImages } from '../utils/imageUtils'
-import { loadFromLocalStorage, clearLocalStorage, getGameHistory, saveToLocalStorage, removeGameFromHistory } from '../utils/localStorage'
+import { loadFromLocalStorage, clearLocalStorage, getGameHistory, saveToLocalStorage, removeGameFromHistory, getDeletedGames } from '../utils/localStorage'
 import { getGamesList, loadGameFromFirestore, isFirestoreAvailable } from '../services/firestore'
 
 function SetupWizard() {
@@ -53,14 +53,19 @@ function SetupWizard() {
     setLoadingStories(true)
     try {
       const allStories = []
+      const deletedGames = getDeletedGames() // 삭제된 게임 ID 목록
       
       // 로컬스토리지 히스토리
       const localHistory = getGameHistory()
       localHistory.forEach(game => {
-        allStories.push({
-          ...game,
-          source: 'local'
-        })
+        // 삭제된 게임이 아니면 추가
+        const gameId = game.firestoreId || game.id
+        if (gameId && !deletedGames.includes(gameId)) {
+          allStories.push({
+            ...game,
+            source: 'local'
+          })
+        }
       })
 
       // Firestore 목록
@@ -68,14 +73,18 @@ function SetupWizard() {
         try {
           const firestoreGames = await getGamesList(50)
           firestoreGames.forEach(game => {
-            // 중복 제거 (firestoreId가 같으면 로컬 것을 덮어씀)
-            const existingIndex = allStories.findIndex(s => 
-              s.firestoreId === game.firestoreId
-            )
-            if (existingIndex >= 0) {
-              allStories[existingIndex] = { ...allStories[existingIndex], ...game, source: 'firestore' }
-            } else {
-              allStories.push({ ...game, source: 'firestore' })
+            const gameId = game.firestoreId || game.id
+            // 삭제된 게임이 아니면 추가
+            if (gameId && !deletedGames.includes(gameId)) {
+              // 중복 제거 (firestoreId가 같으면 로컬 것을 덮어씀)
+              const existingIndex = allStories.findIndex(s => 
+                s.firestoreId === game.firestoreId
+              )
+              if (existingIndex >= 0) {
+                allStories[existingIndex] = { ...allStories[existingIndex], ...game, source: 'firestore' }
+              } else {
+                allStories.push({ ...game, source: 'firestore' })
+              }
             }
           })
         } catch (err) {

@@ -71,6 +71,7 @@ export function getLastSavedTime() {
 
 
 const HISTORY_KEY = 'interactive_story_game_history'
+const DELETED_GAMES_KEY = 'interactive_story_deleted_games'
 
 /**
  * 게임 히스토리 저장 (목록 관리)
@@ -134,8 +135,41 @@ export function removeGameFromHistory(gameId) {
       g.firestoreId !== gameId && g.id !== gameId
     )
     localStorage.setItem(HISTORY_KEY, JSON.stringify(newHistory))
+    
+    // 삭제된 게임 ID 목록에 추가 (Firestore에서 다시 불러올 때 필터링용)
+    const deletedGames = getDeletedGames()
+    if (!deletedGames.includes(gameId)) {
+      deletedGames.push(gameId)
+      localStorage.setItem(DELETED_GAMES_KEY, JSON.stringify(deletedGames))
+    }
+    
     console.log('히스토리에서 게임 삭제 완료:', gameId)
   } catch (error) {
     console.error('히스토리 삭제 오류:', error)
+  }
+}
+
+/**
+ * 삭제된 게임 ID 목록 가져오기
+ * @returns {Array<string>} 삭제된 게임 ID 목록
+ */
+export function getDeletedGames() {
+  try {
+    const data = localStorage.getItem(DELETED_GAMES_KEY)
+    return data ? JSON.parse(data) : []
+  } catch (error) {
+    console.error('삭제된 게임 목록 불러오기 오류:', error)
+    return []
+  }
+}
+
+/**
+ * 삭제된 게임 ID 목록 초기화 (필요시 사용)
+ */
+export function clearDeletedGames() {
+  try {
+    localStorage.removeItem(DELETED_GAMES_KEY)
+  } catch (error) {
+    console.error('삭제된 게임 목록 초기화 오류:', error)
   }
 }
