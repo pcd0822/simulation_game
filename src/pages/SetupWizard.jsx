@@ -48,43 +48,20 @@ function SetupWizard() {
     loadSavedStories()
   }, [])
 
-  // 저장된 스토리 목록 불러오기 (Firestore + 로컬스토리지)
+  // 저장된 스토리 목록 불러오기 (Firestore에 저장된 것만 표시 — 로컬 전용 제외)
   const loadSavedStories = async () => {
     setLoadingStories(true)
     try {
       const allStories = []
-      const deletedGames = getDeletedGames() // 삭제된 게임 ID 목록
-      
-      // 로컬스토리지 히스토리
-      const localHistory = getGameHistory()
-      localHistory.forEach(game => {
-        // 삭제된 게임이 아니면 추가
-        const gameId = game.firestoreId || game.id
-        if (gameId && !deletedGames.includes(gameId)) {
-          allStories.push({
-            ...game,
-            source: 'local'
-          })
-        }
-      })
+      const deletedGames = getDeletedGames()
 
-      // Firestore 목록
       if (isFirestoreAvailable()) {
         try {
           const firestoreGames = await getGamesList(50)
           firestoreGames.forEach(game => {
             const gameId = game.firestoreId || game.id
-            // 삭제된 게임이 아니면 추가
             if (gameId && !deletedGames.includes(gameId)) {
-              // 중복 제거 (firestoreId가 같으면 로컬 것을 덮어씀)
-              const existingIndex = allStories.findIndex(s => 
-                s.firestoreId === game.firestoreId
-              )
-              if (existingIndex >= 0) {
-                allStories[existingIndex] = { ...allStories[existingIndex], ...game, source: 'firestore' }
-              } else {
-                allStories.push({ ...game, source: 'firestore' })
-              }
+              allStories.push({ ...game, source: 'firestore' })
             }
           })
         } catch (err) {
@@ -92,7 +69,6 @@ function SetupWizard() {
         }
       }
 
-      // 최신순 정렬
       allStories.sort((a, b) => {
         const dateA = new Date(a.updatedAt || 0)
         const dateB = new Date(b.updatedAt || 0)
@@ -199,7 +175,11 @@ function SetupWizard() {
       }
 
       if (gameData) {
-        loadDataToStore(gameData)
+        // 기존 스토리로 이어서 저장되도록 Firestore ID 유지
+        const dataWithId = { ...gameData, firestoreGameId: story.firestoreId || gameData.firestoreGameId }
+        saveToLocalStorage(dataWithId)
+        sessionStorage.setItem('skipLoadPrompt', 'true')
+        loadDataToStore(dataWithId)
         navigate('/editor')
       } else {
         setError('게임 데이터를 찾을 수 없습니다.')
